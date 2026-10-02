@@ -1,0 +1,116 @@
+plugins {
+	// Both plugin ids come from the same Loom artifact. 1.21.x is obfuscated and
+	// needs the remapping variant; 26.x ships unobfuscated and uses plain Loom.
+	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}" apply false
+	id 'net.fabricmc.fabric-loom' version "${loom_version}" apply false
+}
+
+subprojects { p ->
+	boolean unobfuscated = p.property('unobfuscated').toBoolean()
+	int javaVersion = p.property('java_version').toInteger()
+
+	apply plugin: unobfuscated ? 'net.fabricmc.fabric-loom' : 'net.fabricmc.fabric-loom-remap'
+
+	version = "${mod_version}+mc${p.property('mc_label')}"
+	group = maven_group
+
+	base {
+		archivesName = archives_base_name
+	}
+
+	sourceSets {
+		main {
+			java.srcDirs = [rootProject.file('src/main/java'), rootProject.file("src/compat/${p.property('compat_src')}/java")]
+			resources.srcDirs = [rootProject.file('src/main/resources')]
+		}
+		test {
+			java.srcDirs = [rootProject.file('src/test/java')]
+			resources.srcDirs = []
+		}
+	}
+
+	// In-game tests: ./gradlew :<version>:runClientGameTest launches the client and fishes for real.
+	fabricApi {
+		configureTests {
+			createSourceSet = true
+			modId = 'fishingfriend-gametest'
+			enableGameTests = false
+			enableClientGameTests = true
+		}
+	}
+	sourceSets.matching { it.name == 'gametest' }.configureEach {
+		java.srcDirs = [rootProject.file('src/gametest/java')]
+		resources.srcDirs = [rootProject.file('src/gametest/resources')]
+	}
+
+	repositories {
+		maven {
+			name = 'Terraformers'
+			url = 'https://maven.terraformersmc.com/releases/'
+			content { includeGroup 'com.terraformersmc' }
+		}
+		mavenCentral()
+	}
+
+	dependencies {
+		minecraft "com.mojang:minecraft:${p.property('minecraft_version')}"
+		if (unobfuscated) {
+			implementation "net.fabricmc:fabric-loader:${loader_version}"
+			implementation "net.fabricmc.fabric-api:fabric-api:${p.property('fabric_api_version')}"
+			compileOnly "com.terraformersmc:modmenu:${p.property('modmenu_version')}"
+			localRuntime "com.terraformersmc:modmenu:${p.property('modmenu_version')}"
+		} else {
+			mappings loom.officialMojangMappings()
+			modImplementation "net.fabricmc:fabric-loader:${loader_version}"
+			modImplementation "net.fabricmc.fabric-api:fabric-api:${p.property('fabric_api_version')}"
+			modCompileOnly "com.terraformersmc:modmenu:${p.property('modmenu_version')}"
+			modLocalRuntime "com.terraformersmc:modmenu:${p.property('modmenu_version')}"
+		}
+
+		testImplementation platform('org.junit:junit-bom:5.13.4')
+		testImplementation 'org.junit.jupiter:junit-jupiter'
+		testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+	}
+
+	processResources {
+		def props = [
+			version     : p.version,
+			mc_range    : p.property('mc_range'),
+			loader_min  : p.property('loader_min'),
+			java_version: javaVersion,
+		]
+		inputs.properties props
+		filesMatching('fabric.mod.json') {
+			expand props
+		}
+	}
+
+	tasks.withType(JavaCompile).configureEach {
+		options.release = javaVersion
+		options.encoding = 'UTF-8'
+	}
+
+	java {
+		sourceCompatibility = JavaVersion.toVersion(javaVersion)
+		targetCompatibility = JavaVersion.toVersion(javaVersion)
+	}
+
+	test {
+		useJUnitPlatform()
+	}
+
+	jar {
+		from(rootProject.file('LICENSE')) {
+			rename { "${it}_${archives_base_name}" }
+		}
+	}
+
+	// The jar players install: the remapped one on 1.21.x, the plain one on 26.x.
+	def releaseJar = unobfuscated ? tasks.named('jar') : tasks.named('remapJar')
+
+	tasks.register('collectJar', Copy) {
+		from releaseJar
+		into rootProject.layout.buildDirectory.dir('libs')
+	}
+	tasks.named('build') { finalizedBy 'collectJar' }
+}

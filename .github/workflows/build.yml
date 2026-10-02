@@ -1,0 +1,48 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: gradle/actions/setup-gradle@v6
+
+      - name: Build and unit test
+        run: ./gradlew build
+
+      - name: Cache Minecraft clients for the compatibility check
+        uses: actions/cache@v6
+        with:
+          path: build/compat-cache
+          key: compat-cache-${{ hashFiles('versions/*/gradle.properties') }}
+          restore-keys: compat-cache-
+
+      - name: Check every jar against every Minecraft version it claims
+        run: python3 scripts/check_compat.py
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: fishing-friend
+          path: build/libs/*.jar
+
+      - name: Attach jars to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: build/libs/*.jar

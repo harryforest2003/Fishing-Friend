@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "fishingfriend",
+  "version": "${version}",
+  "name": "Fishing Friend",
+  "description": "Plays a ding when a fish bites your bobber so you know to reel in, and a second sound when you reel in on time but catch nothing, so you know to move on servers with overfishing rules.",
+  "authors": ["harryforest2003"],
+  "contact": {
+    "sources": "https://github.com/harryforest2003/Fishing-Friend",
+    "issues": "https://github.com/harryforest2003/Fishing-Friend/issues"
+  },
+  "license": "MIT",
+  "icon": "assets/fishingfriend/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["io.github.harryforest2003.fishingfriend.FishingFriendClient"],
+    "modmenu": ["io.github.harryforest2003.fishingfriend.compat.ModMenuIntegration"]
+  },
+  "mixins": ["fishingfriend.mixins.json"],
+  "depends": {
+    "fabricloader": ">=${loader_min}",
+    "minecraft": "${mc_range}",
+    "java": ">=${java_version}",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "modmenu": "*"
+  }
+}

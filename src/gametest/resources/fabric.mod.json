@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "fishingfriend-gametest",
+  "version": "1.0.0",
+  "name": "Fishing Friend Game Tests",
+  "environment": "*",
+  "entrypoints": {
+    "fabric-client-gametest": ["io.github.harryforest2003.fishingfriend.test.FishingFriendClientGameTest"]
+  },
+  "mixins": ["fishingfriend-gametest.mixins.json"],
+  "depends": {
+    "fishingfriend": "*"
+  }
+}

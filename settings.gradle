@@ -1,0 +1,19 @@
+pluginManagement {
+	repositories {
+		maven {
+			name = 'Fabric'
+			url = 'https://maven.fabricmc.net/'
+		}
+		gradlePluginPortal()
+	}
+}
+
+rootProject.name = 'fishing-friend'
+
+// Each folder in versions/ builds one jar from the shared sources in src/.
+// Its gradle.properties picks the Minecraft version it compiles against and
+// the range of Minecraft versions the jar says it supports.
+file('versions').eachDir { dir ->
+	include ":${dir.name}"
+	project(":${dir.name}").projectDir = dir
+}

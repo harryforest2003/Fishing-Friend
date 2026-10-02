@@ -1,0 +1,23 @@
+# Gradle
+.gradle/
+build/
+out/
+classes/
+
+# Loom run directories
+run/
+versions/*/run/
+
+# IDEs
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.classpath
+.project
+.settings/
+bin/
+
+# macOS
+.DS_Store
