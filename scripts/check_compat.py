@@ -3,8 +3,8 @@
 
 Each jar in build/libs is compiled against one Minecraft version (minecraft_version in
 versions/<name>/gradle.properties) but declares a range (mc_range). This script downloads the
-client of every release in that range and confirms that everything the jar uses still exists
-with the same name and signature:
+client of every release in that range, plus the newest Fabric API for it, and confirms that
+everything the jar uses from either still exists with the same name and signature:
 
   * classes, fields and methods it references (including through lambdas)
   * methods it overrides in Minecraft classes, and abstract methods it must implement
@@ -18,6 +18,7 @@ Needs Python 3.9+ and Java on the PATH. Downloads are cached in build/compat-cac
 """
 
 import hashlib
+import io
 import json
 import re
 import struct
@@ -79,6 +80,24 @@ def client_jar(version, manifest_entry, unobfuscated):
     subprocess.run(["java", "-jar", str(remapper), str(official), str(remapped), str(tiny), "official", "intermediary"],
                    check=True, stdout=subprocess.DEVNULL)
     return remapped
+
+
+def fabric_api_versions():
+    metadata = download(f"{FABRIC_MAVEN}/net/fabricmc/fabric-api/fabric-api/maven-metadata.xml",
+                        CACHE / "fabric-api-metadata.xml").read_text()
+    return re.findall(r"<version>([^<]+)</version>", metadata)
+
+
+def fabric_api_jar(minecraft, pinned=None, all_versions=None):
+    """The Fabric API jar for `minecraft`: `pinned` if given, else the newest build for that version."""
+    version = pinned
+    if version is None:
+        builds = [v for v in all_versions if v.endswith("+" + minecraft)]
+        if not builds:
+            sys.exit(f"no Fabric API build found for {minecraft}")
+        version = max(builds, key=lambda v: tuple(int(n) for n in v.split("+")[0].split(".")))
+    return download(f"{FABRIC_MAVEN}/net/fabricmc/fabric-api/fabric-api/{version}/fabric-api-{version}.jar",
+                    CACHE / "fabric-api" / f"fabric-api-{version}.jar")
 
 
 # --- Class file parsing ----------------------------------------------------------------------
@@ -269,14 +288,26 @@ class _Reader:
 
 
 class Jar:
-    def __init__(self, path):
-        self.zip = zipfile.ZipFile(path)
-        self.names = {n[:-6] for n in self.zip.namelist() if n.endswith(".class")}
+    """The classes of one or more jars. Jars nested under META-INF/jars (as in Fabric API) are included."""
+
+    def __init__(self, *paths):
+        self.sources = {}
         self.cache = {}
+        for path in paths:
+            self._add(zipfile.ZipFile(path))
+        self.names = set(self.sources)
+
+    def _add(self, archive):
+        for entry in archive.namelist():
+            if entry.endswith(".class"):
+                self.sources.setdefault(entry[:-6], archive)
+            elif entry.startswith("META-INF/jars/") and entry.endswith(".jar"):
+                self._add(zipfile.ZipFile(io.BytesIO(archive.read(entry))))
 
     def get(self, name):
         if name not in self.cache:
-            self.cache[name] = ClassFile(self.zip.read(name + ".class")) if name in self.names else None
+            archive = self.sources.get(name)
+            self.cache[name] = ClassFile(archive.read(name + ".class")) if archive else None
         return self.cache[name]
 
     def supertypes(self, name, include_self=True):
@@ -430,6 +461,7 @@ def read_properties(path):
 def main():
     root_props = read_properties(ROOT / "gradle.properties")
     releases = release_versions()
+    fabric_api_builds = fabric_api_versions()
     failed = False
 
     for version_dir in sorted((ROOT / "versions").iterdir()):
@@ -448,9 +480,12 @@ def main():
             failed = True
 
         mod = Jar(jar_path)
-        baseline = Jar(client_jar(compiled_against, releases[compiled_against], unobfuscated))
+        baseline = Jar(client_jar(compiled_against, releases[compiled_against], unobfuscated),
+                       fabric_api_jar(compiled_against, pinned=props["fabric_api_version"]))
         for version in targets:
-            problems = check(mod, baseline, Jar(client_jar(version, releases[version], unobfuscated)))
+            target = Jar(client_jar(version, releases[version], unobfuscated),
+                         fabric_api_jar(version, all_versions=fabric_api_builds))
+            problems = check(mod, baseline, target)
             if problems:
                 failed = True
                 print(f"  {version}: FAIL")

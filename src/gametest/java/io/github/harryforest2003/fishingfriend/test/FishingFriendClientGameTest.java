@@ -1,8 +1,10 @@
 package io.github.harryforest2003.fishingfriend.test;
 
+import io.github.harryforest2003.fishingfriend.compat.VersionCompat;
 import io.github.harryforest2003.fishingfriend.config.FishingFriendConfigScreen;
 import io.github.harryforest2003.fishingfriend.config.SoundPresets;
-import io.github.harryforest2003.fishingfriend.test.mixin.FishingHookMixin;
+import io.github.harryforest2003.fishingfriend.stats.FishingStats;
+import io.github.harryforest2003.fishingfriend.stats.StatsStore;
 import net.fabricmc.fabric.api.client.gametest.v1.FabricClientGameTest;
 import net.fabricmc.fabric.api.client.gametest.v1.context.ClientGameTestContext;
 import net.fabricmc.fabric.api.client.gametest.v1.context.TestServerContext;
@@ -11,77 +13,115 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Inventory;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Predicate;
 
 /**
- * Fishes in a real singleplayer world and checks which alert sounds the mod plays.
- * Run with {@code ./gradlew :<version>:runClientGameTest}.
+ * Fishes in a real singleplayer world and checks the sounds, stats and messages the mod produces.
+ * Run with {@code ./gradlew :<version>:runClientGameTest}; screenshots land in the run directory.
  */
 @SuppressWarnings("UnstableApiUsage")
 public final class FishingFriendClientGameTest implements FabricClientGameTest {
 	private static final String BITE_SOUND = SoundPresets.BELL;
-	private static final String EMPTY_CATCH_SOUND = SoundPresets.VILLAGER_NO;
+	private static final String FISHED_OUT_SOUND = SoundPresets.VILLAGER_NO;
 	/** Without Lure a fish bites within about 35 seconds. */
 	private static final int BITE_TIMEOUT_TICKS = 20 * 90;
+	private static final int ENTER = 257;
 
 	private final List<String> playedSounds = new CopyOnWriteArrayList<>();
+	private BlockPos feet;
 
 	@Override
 	public void runTest(ClientGameTestContext context) {
 		context.runOnClient(client -> client.getSoundManager().addListener(
-			(sound, soundSet, range) -> playedSounds.add(sound.getIdentifier().toString())));
+			(sound, soundSet, range) -> playedSounds.add(VersionCompat.soundId(sound))));
 
 		try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
-			buildPond(singleplayer.getServer());
+			TestServerContext server = singleplayer.getServer();
+			buildPond(server);
 			context.waitTicks(40);
 
-			// Reeling in on a bite: ding, then the catch arrives and there is no warning.
+			// Reeling in on a bite: ding, the catch arrives, no fished-out alert, and it shows in the stats.
 			int itemsBefore = countItems(context);
 			castAndWaitForBite(context);
 			useRod(context);
 			context.waitFor(client -> countItems(client.player.getInventory()) > itemsBefore, 100);
 			context.waitTicks(40);
-			assertNotPlayed(EMPTY_CATCH_SOUND, "after a successful catch");
+			assertNotPlayed(FISHED_OUT_SOUND, "after a successful catch");
+			assertStats("after a catch", stats -> stats.bites >= 1 && stats.catches == 1 && !stats.items.isEmpty());
 
-			// An overfishing rule deletes the catch: the warning plays.
-			FishingHookMixin.swallowCatch = true;
+			// An overfishing rule deletes the catch: the fished-out alert plays and the reminder starts.
+			OverfishingRule.active = true;
 			try {
 				castAndWaitForBite(context);
 				useRod(context);
-				context.waitFor(client -> playedSounds.contains(EMPTY_CATCH_SOUND), 60);
+				context.waitFor(client -> playedSounds.contains(FISHED_OUT_SOUND), 60);
 			} finally {
-				FishingHookMixin.swallowCatch = false;
+				OverfishingRule.active = false;
 			}
+			assertStats("after an empty catch", stats -> stats.emptyCatches == 1);
+
+			// Aiming at the fished-out spot shows the reminder, aiming away clears it, aiming back brings it back.
+			context.waitTicks(60);
+			context.takeScreenshot("fishingfriend-reminder-aiming-at-spot");
+			face(server, 180);
+			context.waitTicks(5);
+			context.takeScreenshot("fishingfriend-reminder-far-enough");
+			context.waitTicks(60);
+			face(server, 0);
+			context.waitTicks(5);
+			context.takeScreenshot("fishingfriend-reminder-back-in-spot");
 
 			// Reeling in before anything bites stays quiet.
+			face(server, 180);
 			playedSounds.clear();
 			useRod(context);
 			context.waitTicks(40);
 			useRod(context);
 			context.waitTicks(40);
 			assertNotPlayed(BITE_SOUND, "when reeling in early");
-			assertNotPlayed(EMPTY_CATCH_SOUND, "when reeling in early");
+			assertNotPlayed(FISHED_OUT_SOUND, "when reeling in early");
 
-			// The config screen opens and Done returns to the previous screen.
+			// /fishingstats prints to chat.
+			context.getInput().pressKey(options -> options.keyChat);
+			context.waitTicks(5);
+			context.getInput().typeChars("/fishingstats");
+			context.getInput().pressKey(ENTER);
+			context.waitTicks(10);
+			context.takeScreenshot("fishingfriend-stats");
+
+			// Both config pages open, and Done returns to the previous screen.
 			context.setScreen(() -> new FishingFriendConfigScreen(null));
-			context.takeScreenshot("fishingfriend-config");
+			context.takeScreenshot("fishingfriend-config-sounds");
+			context.clickScreenButton("fishingfriend.config.page.spots");
+			context.takeScreenshot("fishingfriend-config-spots");
 			context.clickScreenButton("gui.done");
 			context.waitForScreen(null);
 		}
 	}
 
-	/** A pond around the player, who stands on a single stone block facing south. */
-	private static void buildPond(TestServerContext server) {
-		BlockPos feet = server.computeOnServer(s -> s.getPlayerList().getPlayers().getFirst().blockPosition());
+	/**
+	 * A raised pond with the player standing on a single stone block in the middle, facing south.
+	 * It is built above the ground because test worlds spawn the player right at the bottom of the world.
+	 */
+	private void buildPond(TestServerContext server) {
+		feet = server.computeOnServer(s -> s.getPlayerList().getPlayers().getFirst().blockPosition()).above(6);
 		int x = feet.getX(), y = feet.getY(), z = feet.getZ();
 		server.runCommand(String.format("fill %d %d %d %d %d %d minecraft:stone", x - 13, y - 5, z - 13, x + 13, y - 1, z + 13));
 		server.runCommand(String.format("fill %d %d %d %d %d %d minecraft:water", x - 12, y - 4, z - 12, x + 12, y - 1, z + 12));
 		server.runCommand(String.format("setblock %d %d %d minecraft:stone", x, y - 1, z));
 		server.runCommand(String.format("fill %d %d %d %d %d %d minecraft:air", x - 13, y, z - 13, x + 13, y + 3, z + 13));
-		server.runCommand(String.format("tp @a %d.5 %d %d.5 0 25", x, y, z));
+		face(server, 0);
 		server.runCommand("item replace entity @a weapon.mainhand with minecraft:fishing_rod");
 		server.runCommand("time set day");
 		server.runCommand("weather clear");
+	}
+
+	/** Turns the player to {@code yaw} (0 = south), looking a little down at the water. */
+	private void face(TestServerContext server, int yaw) {
+		// Block centres are x + 0.5 even for negative coordinates (block -10 spans -10 to -9).
+		server.runCommand(String.format(Locale.ROOT, "tp @a %.1f %d %.1f %d 25", feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5, yaw));
 	}
 
 	private void castAndWaitForBite(ClientGameTestContext context) {
@@ -99,6 +139,14 @@ public final class FishingFriendClientGameTest implements FabricClientGameTest {
 	private void assertNotPlayed(String sound, String when) {
 		if (playedSounds.contains(sound)) {
 			throw new AssertionError(sound + " played " + when + "; sounds: " + playedSounds);
+		}
+	}
+
+	private static void assertStats(String when, Predicate<FishingStats> check) {
+		FishingStats stats = StatsStore.session();
+		if (!check.test(stats)) {
+			throw new AssertionError("unexpected stats " + when + ": bites=" + stats.bites + " catches=" + stats.catches
+				+ " empty=" + stats.emptyCatches + " items=" + stats.items);
 		}
 	}
 

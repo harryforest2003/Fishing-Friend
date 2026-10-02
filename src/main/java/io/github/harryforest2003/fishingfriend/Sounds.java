@@ -1,10 +1,10 @@
 package io.github.harryforest2003.fishingfriend;
 
+import io.github.harryforest2003.fishingfriend.compat.VersionCompat;
 import io.github.harryforest2003.fishingfriend.config.FishingFriendConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
-import net.minecraft.resources.Identifier;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.phys.Vec3;
@@ -19,12 +19,11 @@ public final class Sounds {
 	 * no direction.
 	 */
 	public static void play(FishingFriendConfig.Alert alert) {
-		Identifier id = Identifier.tryParse(alert.sound);
-		if (id == null) {
+		SoundEvent sound = VersionCompat.soundEvent(alert.sound);
+		if (sound == null) {
 			FishingFriendClient.LOGGER.warn("'{}' is not a valid sound id", alert.sound);
 			return;
 		}
-		SoundEvent sound = SoundEvent.createVariableRangeEvent(id);
 		Minecraft client = Minecraft.getInstance();
 		ClientLevel level = client.level;
 		if (level != null) {
