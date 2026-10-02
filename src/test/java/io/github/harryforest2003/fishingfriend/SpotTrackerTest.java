@@ -25,8 +25,8 @@ class SpotTrackerTest {
 			}
 
 			@Override
-			public void onSpotFishedOut() {
-				events.add("fished out");
+			public void onSpotFishedOut(boolean again) {
+				events.add(again ? "still fished out" : "fished out");
 			}
 
 			@Override
@@ -50,7 +50,7 @@ class SpotTrackerTest {
 
 	@Test
 	void anEmptyCatchFishesOutTheSpotUntilThePlayerAimsFarEnough() {
-		tracker.onEmptyCatch(SPOT);
+		tracker.onEmptyCatch(SPOT, 0);
 
 		assertEquals(Status.NOT_AIMING, tracker.update(null));
 		assertEquals(Status.TOO_CLOSE, tracker.update(at(1, 1)));
@@ -61,7 +61,7 @@ class SpotTrackerTest {
 
 	@Test
 	void theReminderComesBackWhenAimingBackIntoTheSpot() {
-		tracker.onEmptyCatch(SPOT);
+		tracker.onEmptyCatch(SPOT, 0);
 		tracker.update(at(5, 0));
 
 		assertEquals(Status.TOO_CLOSE, tracker.update(at(1, 0)));
@@ -71,7 +71,7 @@ class SpotTrackerTest {
 
 	@Test
 	void lookingAwayAfterFindingANewSpotIsQuiet() {
-		tracker.onEmptyCatch(SPOT);
+		tracker.onEmptyCatch(SPOT, 0);
 		tracker.update(at(5, 0));
 
 		assertEquals(Status.NONE, tracker.update(null));
@@ -80,7 +80,7 @@ class SpotTrackerTest {
 
 	@Test
 	void diagonalsOnlyCountTheLongerAxis() {
-		tracker.onEmptyCatch(SPOT);
+		tracker.onEmptyCatch(SPOT, 0);
 
 		assertEquals(Status.TOO_CLOSE, tracker.update(at(2.5, 2.5)));
 		assertEquals(Status.FAR_ENOUGH, tracker.update(at(2.5, 3)));
@@ -88,24 +88,48 @@ class SpotTrackerTest {
 
 	@Test
 	void catchingSomethingForgetsTheFishedOutSpot() {
-		tracker.onEmptyCatch(SPOT);
-		tracker.onCatch(at(6, 0));
+		tracker.onEmptyCatch(SPOT, 0);
+		tracker.onCatch(at(6, 0), 100);
 
 		assertEquals(Status.NONE, tracker.update(SPOT));
 	}
 
 	@Test
-	void theServerMessageAndTheEmptyCatchOnlyAlertOnce() {
-		tracker.onServerSaysFishedOut(SPOT, 0);
-		tracker.onEmptyCatch(at(0.5, 0));
+	void theServerMessageAndTheEmptyCatchFromOneReelAlertOnce() {
+		tracker.onServerSaysFishedOut(SPOT, 0, 0);
+		tracker.onEmptyCatch(at(0.5, 0), 20);
 
 		assertEquals(List.of("fished out"), events);
 	}
 
 	@Test
+	void fishingTheSameSpotAgainAlertsAgain() {
+		tracker.onServerSaysFishedOut(SPOT, 0, 0);
+		tracker.onEmptyCatch(SPOT, 20);
+		tracker.update(at(6, 0));
+
+		// Later the player casts back into the same spot and the server complains again.
+		tracker.onServerSaysFishedOut(at(1, 0), 0, 400);
+		tracker.onEmptyCatch(at(1, 0), 420);
+
+		assertEquals(List.of("fished out", "far enough", "still fished out"), events);
+		assertEquals(Status.NOT_AIMING, tracker.update(null));
+		assertEquals(Status.TOO_CLOSE, tracker.update(SPOT));
+	}
+
+	@Test
+	void repeatedWarningsInTheSameSpotAlertEachTime() {
+		for (int reel = 0; reel < 5; reel++) {
+			tracker.onEmptyCatch(SPOT, reel * 200L);
+		}
+
+		assertEquals(List.of("fished out", "still fished out", "still fished out", "still fished out", "still fished out"), events);
+	}
+
+	@Test
 	void aDistanceInTheServerMessageWinsIfItIsLarger() {
-		tracker.onServerSaysFishedOut(SPOT, 6);
-		tracker.onEmptyCatch(SPOT);
+		tracker.onServerSaysFishedOut(SPOT, 6, 0);
+		tracker.onEmptyCatch(SPOT, 20);
 
 		assertEquals(6, tracker.requiredDistance());
 		assertEquals(Status.TOO_CLOSE, tracker.update(at(5, 0)));
@@ -115,11 +139,11 @@ class SpotTrackerTest {
 	@Test
 	void theCatchLimitWarnsOneEarlyThenFishesOutTheSpot() {
 		tracker.setCatchLimit(3);
-		tracker.onCatch(SPOT);
-		tracker.onCatch(at(1, 0));
+		tracker.onCatch(SPOT, 0);
+		tracker.onCatch(at(1, 0), 400);
 		assertEquals(List.of("low"), events);
 
-		tracker.onCatch(at(0, 1));
+		tracker.onCatch(at(0, 1), 800);
 		assertEquals(List.of("low", "fished out"), events);
 		assertEquals(Status.TOO_CLOSE, tracker.update(SPOT));
 	}
@@ -127,10 +151,10 @@ class SpotTrackerTest {
 	@Test
 	void movingBetweenCatchesRestartsTheCount() {
 		tracker.setCatchLimit(3);
-		tracker.onCatch(SPOT);
-		tracker.onCatch(at(1, 0));
-		tracker.onCatch(at(10, 0));
-		tracker.onCatch(at(11, 0));
+		tracker.onCatch(SPOT, 0);
+		tracker.onCatch(at(1, 0), 400);
+		tracker.onCatch(at(10, 0), 800);
+		tracker.onCatch(at(11, 0), 1200);
 
 		assertEquals(List.of("low", "low"), events);
 	}

@@ -11,6 +11,7 @@ import net.fabricmc.fabric.api.client.gametest.v1.context.TestSingleplayerContex
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Inventory;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Predicate;
@@ -52,10 +53,24 @@ public final class FishingFriendClientGameTest implements FabricClientGameTest {
 				castAndWaitForBite(context);
 				useRod(context);
 				context.waitFor(client -> playedSounds.contains(FISHED_OUT_SOUND), 60);
+				assertStats("after an empty catch", stats -> stats.emptyCatches == 1);
+
+				// Fishing the same spot again by mistake: the server repeats its warning (just before removing the
+				// bobber, as mcMMO does) and the catch is deleted again. One alert for the reel, and no crash.
+				castAndWaitForBite(context);
+				server.runCommand("tellraw @a \"That area is suffering from overfishing. At least 3 blocks away.\"");
+				server.runCommand("title @a actionbar \"That area is suffering from overfishing. At least 3 blocks away.\"");
+				useRod(context);
+				context.waitFor(client -> playedSounds.contains(FISHED_OUT_SOUND), 60);
+				context.waitTicks(60);
+				int alerts = Collections.frequency(playedSounds, FISHED_OUT_SOUND);
+				if (alerts != 1) {
+					throw new AssertionError("expected one fished-out alert for the repeat reel, got " + alerts + ": " + playedSounds);
+				}
+				assertStats("after fishing the spot again", stats -> stats.emptyCatches == 2);
 			} finally {
 				OverfishingRule.active = false;
 			}
-			assertStats("after an empty catch", stats -> stats.emptyCatches == 1);
 
 			// Aiming at the fished-out spot shows the reminder, aiming away clears it, aiming back brings it back.
 			context.waitTicks(60);
@@ -83,12 +98,12 @@ public final class FishingFriendClientGameTest implements FabricClientGameTest {
 			useRod(context);
 			context.waitFor(client -> playedSounds.contains(FISHED_OUT_SOUND), 40);
 
-			// And it still counts when it arrives just after the reel. Cast the other way, since the spot just
-			// marked as fished out would make this a repeat of the same warning.
+			// And it still counts when it arrives just after the reel. Wait a few seconds first: warnings for the
+			// same spot within three seconds count as one reel.
 			playedSounds.clear();
 			face(server, 0);
 			useRod(context);
-			context.waitTicks(30);
+			context.waitTicks(80);
 			useRod(context);
 			server.runCommand("tellraw @a \"That area is suffering from overfishing. At least 5 blocks away.\"");
 			context.waitFor(client -> playedSounds.contains(FISHED_OUT_SOUND), 40);

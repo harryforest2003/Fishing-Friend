@@ -36,6 +36,7 @@
   "fishingfriend.message.line_snapped": "Your line snapped, you moved too far from the bobber",
   "fishingfriend.message.running_low": "Running low on fish here, move soon",
   "fishingfriend.message.fished_out": "This spot is fished out!",
+  "fishingfriend.message.still_fished_out": "This spot is still fished out!",
   "fishingfriend.message.far_enough": "Far enough, cast here!",
   "fishingfriend.message.reminder.aim": "Spot fished out: aim at water at least %s blocks away",
   "fishingfriend.message.reminder.closer": "Spot fished out: aim %s more blocks away",

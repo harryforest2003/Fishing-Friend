@@ -133,7 +133,7 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 		Runnable warning;
 		if (ServerMessages.containsAny(text, config.fishedOutPhrases)) {
 			int blocks = ServerMessages.blocksMentioned(text);
-			warning = () -> spot.onServerSaysFishedOut(bobber.hookPos(), blocks);
+			warning = () -> spot.onServerSaysFishedOut(bobber.hookPos(), blocks, ticks);
 		} else if (ServerMessages.containsAny(text, config.runningLowPhrases)) {
 			warning = spot::onServerSaysRunningLow;
 		} else {
@@ -203,13 +203,13 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 		if (item != null) {
 			catchesToIdentify.add(item);
 		}
-		spot.onCatch(at);
+		spot.onCatch(at, ticks);
 	}
 
 	@Override
 	public void onEmptyCatch(Pos at, int reactionTicks) {
 		StatsStore.record(stats -> stats.recordEmptyCatch(reactionTicks));
-		spot.onEmptyCatch(at);
+		spot.onEmptyCatch(at, ticks);
 	}
 
 	@Override
@@ -228,9 +228,10 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 	}
 
 	@Override
-	public void onSpotFishedOut() {
+	public void onSpotFishedOut(boolean again) {
 		FishingFriendConfig config = FishingFriendConfig.get();
-		alert(config.fishedOut, Component.translatable("fishingfriend.message.fished_out").withStyle(ChatFormatting.RED));
+		String key = again ? "fishingfriend.message.still_fished_out" : "fishingfriend.message.fished_out";
+		alert(config.fishedOut, Component.translatable(key).withStyle(ChatFormatting.RED));
 	}
 
 	@Override
