@@ -95,6 +95,13 @@ GitHub runs it on every push, on a virtual screen, for each build. It also runs 
 ./gradlew :26.2:runClientGameTest
 ```
 
+### Releasing
+
+1. Bump `mod_version` in `gradle.properties` and add a section for it to `CHANGELOG.md`.
+2. Push to `main`, then tag it: `git tag v<version> && git push origin v<version>`.
+
+GitHub builds the jars, runs the unit, compatibility and in-game tests, and only if they all pass publishes the release. The notes come from the changelog and the jar table is generated from `versions/`.
+
 ### Adding a Minecraft version
 
 1. If the existing jar's code still works, widen `mc_range` in its `versions/<name>/gradle.properties` and run `scripts/check_compat.py`.
