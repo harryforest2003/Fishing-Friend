@@ -81,7 +81,15 @@ python3 scripts/check_compat.py
 
 It downloads each Minecraft client (remapped to Fabric's intermediary names for 1.21.x) and the newest Fabric API for it, then confirms every class, method, field, override and mixin target the jar uses still exists. CI runs it on every push.
 
-Unit tests for the bobber, spot and stats logic run as part of `./gradlew build`. There is also an in-game test that builds a pond and fishes for real. It checks the alerts, a simulated overfishing rule, the move reminder, `/fishingstats` and the config screen, and saves screenshots to `versions/<version>/build/run/clientGameTest/screenshots`. A Minecraft window opens while it runs:
+Unit tests for the bobber, spot and stats logic run as part of `./gradlew build`.
+
+There is also an in-game test that builds a pond and fishes for real. It checks:
+- the alerts and a simulated overfishing rule;
+- server warnings in chat and in the action bar;
+- the move reminder;
+- `/fishingstats` and the config screen.
+
+GitHub runs it on every push, on a virtual screen, for each build. It also runs the released 1.21.9–1.21.11 jar on 1.21.10, a version it wasn't compiled against, using the harness in `testing/jar-test`. Screenshots from each run are attached to the workflow run. To run it locally (a Minecraft window opens):
 
 ```bash
 ./gradlew :26.2:runClientGameTest

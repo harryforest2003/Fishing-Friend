@@ -42,6 +42,12 @@ subprojects { p ->
 		java.srcDirs = [rootProject.file('src/gametest/java')]
 		resources.srcDirs = [rootProject.file('src/gametest/resources')]
 	}
+	tasks.matching { it.name == 'runClientGameTest' }.configureEach {
+		// Known Fabric issue on GitHub Actions runners.
+		if (System.getenv('CI')) {
+			jvmArgs '-Dfabric.client.gametest.disableNetworkSynchronizer=true'
+		}
+	}
 
 	repositories {
 		maven {

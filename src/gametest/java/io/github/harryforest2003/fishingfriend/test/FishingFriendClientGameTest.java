@@ -1,6 +1,5 @@
 package io.github.harryforest2003.fishingfriend.test;
 
-import io.github.harryforest2003.fishingfriend.compat.VersionCompat;
 import io.github.harryforest2003.fishingfriend.config.FishingFriendConfigScreen;
 import io.github.harryforest2003.fishingfriend.config.SoundPresets;
 import io.github.harryforest2003.fishingfriend.stats.FishingStats;
@@ -14,7 +13,6 @@ import net.minecraft.world.entity.player.Inventory;
 
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Predicate;
 
 /**
@@ -29,14 +27,11 @@ public final class FishingFriendClientGameTest implements FabricClientGameTest {
 	private static final int BITE_TIMEOUT_TICKS = 20 * 90;
 	private static final int ENTER = 257;
 
-	private final List<String> playedSounds = new CopyOnWriteArrayList<>();
+	private final List<String> playedSounds = PlayedAlerts.SOUNDS;
 	private BlockPos feet;
 
 	@Override
 	public void runTest(ClientGameTestContext context) {
-		context.runOnClient(client -> client.getSoundManager().addListener(
-			(sound, soundSet, range) -> playedSounds.add(VersionCompat.soundId(sound))));
-
 		try (TestSingleplayerContext singleplayer = context.worldBuilder().create()) {
 			TestServerContext server = singleplayer.getServer();
 			buildPond(server);
@@ -72,6 +67,26 @@ public final class FishingFriendClientGameTest implements FabricClientGameTest {
 			face(server, 0);
 			context.waitTicks(5);
 			context.takeScreenshot("fishingfriend-reminder-back-in-spot");
+
+			// Server warnings only count right after casting or reeling in, so ordinary chat can't trigger them.
+			face(server, 180);
+			useRod(context);
+			context.waitTicks(130);
+			playedSounds.clear();
+			server.runCommand("tellraw @a \"That area is suffering from overfishing. At least 5 blocks away.\"");
+			context.waitTicks(20);
+			assertNotPlayed(FISHED_OUT_SOUND, "for a server message long after casting");
+
+			// Just after reeling in, the same message marks this spot as fished out.
+			useRod(context);
+			server.runCommand("tellraw @a \"That area is suffering from overfishing. At least 5 blocks away.\"");
+			context.waitFor(client -> playedSounds.contains(FISHED_OUT_SOUND), 40);
+
+			// A running-low warning in the action bar. On 26.x the mod's own action bar message also arrives as a
+			// message event, which used to set off an endless loop and crash the game.
+			server.runCommand("title @a actionbar \"You sense that there might not be many fish left in this area.\"");
+			context.waitTicks(3);
+			context.takeScreenshot("fishingfriend-server-running-low");
 
 			// Reeling in before anything bites stays quiet.
 			face(server, 180);

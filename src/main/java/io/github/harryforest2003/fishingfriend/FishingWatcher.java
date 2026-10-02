@@ -42,6 +42,11 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 	/** How far away the player can aim at water when looking for a new spot. */
 	private static final double AIM_RANGE = 48;
 	private static final int STATS_SAVE_TICKS = 20 * 30;
+	/**
+	 * Servers send overfishing warnings the moment you cast or reel in. Ignoring them at other times
+	 * stops ordinary chat from triggering anything on servers that relay player chat as system messages.
+	 */
+	private static final int SERVER_MESSAGE_WINDOW_TICKS = 20 * 5;
 	private static final Set<Item> ALWAYS_TREASURE = Set.of(Items.ENCHANTED_BOOK, Items.NAME_TAG, Items.NAUTILUS_SHELL, Items.SADDLE);
 	private static final Set<Item> TREASURE_IF_ENCHANTED = Set.of(Items.BOW, Items.FISHING_ROD);
 
@@ -54,6 +59,8 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 	private boolean inWorld;
 	private boolean useWasDown;
 	private Component lastReminder;
+	/** True while this mod is putting its own message in the action bar, which on 26.x also fires the message event. */
+	private boolean showingOwnMessage;
 
 	void setToggleKey(KeyMapping toggleKey) {
 		this.toggleKey = toggleKey;
@@ -111,7 +118,8 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 
 	void onGameMessage(Component message, boolean overlay) {
 		FishingFriendConfig config = FishingFriendConfig.get();
-		if (!inWorld || !config.enabled || !config.readServerMessages) {
+		if (showingOwnMessage || !inWorld || !config.enabled || !config.readServerMessages
+			|| !bobber.usedRodWithin(ticks, SERVER_MESSAGE_WINDOW_TICKS)) {
 			return;
 		}
 		String text = message.getString();
@@ -221,7 +229,7 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 		};
 		// Show changes straight away (e.g. aiming back into the spot); otherwise just keep it from fading.
 		if (reminder != null && (!reminder.equals(lastReminder) || ticks % REMINDER_REFRESH_TICKS == 0)) {
-			VersionCompat.showOverlayMessage(client, reminder.copy().withStyle(ChatFormatting.YELLOW));
+			showOverlay(reminder.copy().withStyle(ChatFormatting.YELLOW));
 		}
 		lastReminder = reminder;
 	}
@@ -272,8 +280,7 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 		while (toggleKey.consumeClick()) {
 			config.enabled = !config.enabled;
 			config.save();
-			VersionCompat.showOverlayMessage(client, Component.translatable(
-				config.enabled ? "fishingfriend.message.enabled" : "fishingfriend.message.disabled"));
+			showOverlay(Component.translatable(config.enabled ? "fishingfriend.message.enabled" : "fishingfriend.message.disabled"));
 		}
 	}
 
@@ -294,7 +301,16 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 
 	private void showMessage(Component message) {
 		messageUntil = ticks + MESSAGE_TICKS;
-		VersionCompat.showOverlayMessage(Minecraft.getInstance(), message);
+		showOverlay(message);
+	}
+
+	private void showOverlay(Component message) {
+		showingOwnMessage = true;
+		try {
+			VersionCompat.showOverlayMessage(Minecraft.getInstance(), message);
+		} finally {
+			showingOwnMessage = false;
+		}
 	}
 
 	private void stop() {

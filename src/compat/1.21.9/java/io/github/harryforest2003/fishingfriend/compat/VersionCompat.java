@@ -5,7 +5,6 @@ import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.resources.sounds.SoundInstance;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.sounds.SoundEvent;
@@ -36,11 +35,6 @@ public final class VersionCompat {
 	public static KeyMapping registerToggleKey() {
 		return KeyBindingHelper.registerKeyBinding(new KeyMapping(
 			TOGGLE_KEY, InputConstants.UNKNOWN.getValue(), CATEGORY));
-	}
-
-	/** The id of a sound that is about to play. Used by the in-game test. */
-	public static String soundId(SoundInstance sound) {
-		return sound.getIdentifier().toString();
 	}
 
 	private VersionCompat() {

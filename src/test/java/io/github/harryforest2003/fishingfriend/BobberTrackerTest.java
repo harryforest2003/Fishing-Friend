@@ -308,6 +308,32 @@ class BobberTrackerTest {
 	}
 
 	@Test
+	void remembersRecentRodUseForServerMessages() {
+		assertEquals(false, tracker.usedRodWithin(now, 100));
+		tick(bobbing(false));
+		assertEquals(true, tracker.usedRodWithin(now, 100));
+
+		for (int i = 0; i < 150; i++) {
+			tick(bobbing(false));
+		}
+		assertEquals(false, tracker.usedRodWithin(now, 100));
+
+		pressUse = true;
+		tick(bobbing(false));
+		tick(null);
+		assertEquals(true, tracker.usedRodWithin(now, 100));
+	}
+
+	@Test
+	void clickingWithSomethingElseIsNotRodUse() {
+		holdingRod = false;
+		pressUse = true;
+		tick(null);
+
+		assertEquals(false, tracker.usedRodWithin(now, 100));
+	}
+
+	@Test
 	void resetDropsAPendingEmptyCatch() {
 		castAndSettle();
 		tick(bobbing(true));

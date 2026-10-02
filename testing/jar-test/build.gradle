@@ -1,0 +1,42 @@
+// Runs the in-game test against an already-built 1.21.x jar on a Minecraft version it was not compiled
+// against, the way players use it. Loom remaps the jar from Fabric's intermediary names to this version's.
+//
+//   ./gradlew -p testing/jar-test runClientGameTest -Pmc=1.21.10 -PfabricApi=0.138.4+1.21.10 \
+//       -Pjar=build/libs/fishing-friend-<version>+mc1.21.9-1.21.11.jar
+plugins {
+	id 'net.fabricmc.fabric-loom-remap' version '1.18.2'
+}
+
+def repo = file('../..')
+
+fabricApi {
+	configureTests {
+		createSourceSet = true
+		modId = 'fishingfriend-gametest'
+		enableGameTests = false
+		enableClientGameTests = true
+	}
+}
+sourceSets.matching { it.name == 'gametest' }.configureEach {
+	java.srcDirs = [new File(repo, 'src/gametest/java')]
+	resources.srcDirs = [new File(repo, 'src/gametest/resources')]
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${project.property('mc')}"
+	mappings loom.officialMojangMappings()
+	modImplementation "net.fabricmc:fabric-loader:0.19.5"
+	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.property('fabricApi')}"
+	modImplementation files(new File(repo, project.property('jar')))
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.release = 21
+}
+
+tasks.matching { it.name == 'runClientGameTest' }.configureEach {
+	// Known Fabric issue on GitHub Actions runners.
+	if (System.getenv('CI')) {
+		jvmArgs '-Dfabric.client.gametest.disableNetworkSynchronizer=true'
+	}
+}

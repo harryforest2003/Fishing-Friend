@@ -115,6 +115,7 @@ public final class BobberTracker<T> {
 	private long biteTick = NEVER;
 	private long reelPressTick = NEVER;
 	private long lastUsePress = NEVER;
+	private long lastActivity = NEVER;
 	private long lastSpawnNearHook = NEVER;
 	private T lastSpawnedItem;
 
@@ -138,6 +139,11 @@ public final class BobberTracker<T> {
 		return hookPos;
 	}
 
+	/** Whether the player cast, reeled in or clicked with the rod within the last {@code ticks} ticks. */
+	public boolean usedRodWithin(long now, int ticks) {
+		return lastActivity != NEVER && now - lastActivity <= ticks;
+	}
+
 	/** Whether the current bobber has settled in water. */
 	public boolean inWater() {
 		return hookId != NO_HOOK && landed && inWater;
@@ -151,8 +157,9 @@ public final class BobberTracker<T> {
 	 * @param player the local player
 	 */
 	public void tick(long now, Hook hook, Player player) {
-		if (player.usePressed()) {
+		if (player.usePressed() && (player.holdingRod() || hookId != NO_HOOK)) {
 			lastUsePress = now;
+			lastActivity = now;
 			if (biting && reelPressTick == NEVER) {
 				reelPressTick = now;
 			}
@@ -165,6 +172,7 @@ public final class BobberTracker<T> {
 		if (hook != null) {
 			if (hook.entityId() != hookId) {
 				startTracking(hook);
+				lastActivity = now;
 				listener.onCast();
 			}
 			updateHook(now, hook, player);
@@ -203,6 +211,7 @@ public final class BobberTracker<T> {
 		lastSpawnNearHook = NEVER;
 		lastSpawnedItem = null;
 		lastUsePress = NEVER;
+		lastActivity = NEVER;
 	}
 
 	private void startTracking(Hook hook) {
@@ -265,6 +274,7 @@ public final class BobberTracker<T> {
 		lastSpawnNearHook = NEVER;
 		lastSpawnedItem = null;
 		awaitingCatch = false;
+		lastActivity = now;
 
 		if (snapped) {
 			listener.onLineSnapped();

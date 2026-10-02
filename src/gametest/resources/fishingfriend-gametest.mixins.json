@@ -4,7 +4,8 @@
   "package": "io.github.harryforest2003.fishingfriend.test.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "FishingHookMixin"
+    "FishingHookMixin",
+    "SoundsMixin"
   ],
   "injectors": {
     "defaultRequire": 1

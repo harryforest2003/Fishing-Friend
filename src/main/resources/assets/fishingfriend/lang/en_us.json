@@ -34,7 +34,7 @@
   "fishingfriend.message.landed_on_ground": "Your bobber landed on the ground, nothing will bite there",
   "fishingfriend.message.hooked_entity": "Your bobber hooked %s",
   "fishingfriend.message.line_snapped": "Your line snapped, you moved too far from the bobber",
-  "fishingfriend.message.running_low": "Fish are running low here, move soon",
+  "fishingfriend.message.running_low": "Running low on fish here, move soon",
   "fishingfriend.message.fished_out": "This spot is fished out!",
   "fishingfriend.message.far_enough": "Far enough, cast here!",
   "fishingfriend.message.reminder.aim": "Spot fished out: aim at water at least %s blocks away",
