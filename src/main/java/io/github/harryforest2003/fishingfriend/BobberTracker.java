@@ -144,6 +144,16 @@ public final class BobberTracker<T> {
 		return lastActivity != NEVER && now - lastActivity <= ticks;
 	}
 
+	/** Whether the player cast, reeled in or clicked with the rod at or after tick {@code tick}. */
+	public boolean usedRodSince(long tick) {
+		return lastActivity != NEVER && lastActivity >= tick;
+	}
+
+	/** Whether the player has a bobber out. */
+	public boolean isOut() {
+		return hookId != NO_HOOK;
+	}
+
 	/** Whether the current bobber has settled in water. */
 	public boolean inWater() {
 		return hookId != NO_HOOK && landed && inWater;

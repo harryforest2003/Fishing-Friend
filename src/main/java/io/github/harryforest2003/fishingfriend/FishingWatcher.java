@@ -47,6 +47,11 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 	 * stops ordinary chat from triggering anything on servers that relay player chat as system messages.
 	 */
 	private static final int SERVER_MESSAGE_WINDOW_TICKS = 20 * 5;
+	/**
+	 * Servers usually send the warning just before removing the bobber, so a warning that arrives while
+	 * the bobber is out is held this long to see whether it gets reeled in.
+	 */
+	private static final int PENDING_MESSAGE_TICKS = 20;
 	private static final Set<Item> ALWAYS_TREASURE = Set.of(Items.ENCHANTED_BOOK, Items.NAME_TAG, Items.NAUTILUS_SHELL, Items.SADDLE);
 	private static final Set<Item> TREASURE_IF_ENCHANTED = Set.of(Items.BOW, Items.FISHING_ROD);
 
@@ -61,6 +66,8 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 	private Component lastReminder;
 	/** True while this mod is putting its own message in the action bar, which on 26.x also fires the message event. */
 	private boolean showingOwnMessage;
+	private Runnable pendingServerMessage;
+	private long pendingSince;
 
 	void setToggleKey(KeyMapping toggleKey) {
 		this.toggleKey = toggleKey;
@@ -103,6 +110,7 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 			StatsStore.record(stats -> stats.fishingTicks++);
 		}
 
+		handlePendingServerMessage();
 		identifyCatches();
 		updateMoveReminder(client, player, config);
 		if (ticks % STATS_SAVE_TICKS == 0) {
@@ -118,15 +126,39 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 
 	void onGameMessage(Component message, boolean overlay) {
 		FishingFriendConfig config = FishingFriendConfig.get();
-		if (showingOwnMessage || !inWorld || !config.enabled || !config.readServerMessages
-			|| !bobber.usedRodWithin(ticks, SERVER_MESSAGE_WINDOW_TICKS)) {
+		if (showingOwnMessage || !inWorld || !config.enabled || !config.readServerMessages) {
 			return;
 		}
 		String text = message.getString();
+		Runnable warning;
 		if (ServerMessages.containsAny(text, config.fishedOutPhrases)) {
-			spot.onServerSaysFishedOut(bobber.hookPos(), ServerMessages.blocksMentioned(text));
+			int blocks = ServerMessages.blocksMentioned(text);
+			warning = () -> spot.onServerSaysFishedOut(bobber.hookPos(), blocks);
 		} else if (ServerMessages.containsAny(text, config.runningLowPhrases)) {
-			spot.onServerSaysRunningLow();
+			warning = spot::onServerSaysRunningLow;
+		} else {
+			return;
+		}
+
+		if (bobber.usedRodWithin(ticks, SERVER_MESSAGE_WINDOW_TICKS)) {
+			warning.run();
+		} else if (bobber.isOut()) {
+			pendingServerMessage = warning;
+			pendingSince = ticks;
+		}
+	}
+
+	/** Acts on a held warning once the bobber is reeled in, or drops it if that doesn't happen soon. */
+	private void handlePendingServerMessage() {
+		if (pendingServerMessage == null) {
+			return;
+		}
+		if (bobber.usedRodSince(pendingSince)) {
+			Runnable warning = pendingServerMessage;
+			pendingServerMessage = null;
+			warning.run();
+		} else if (ticks - pendingSince > PENDING_MESSAGE_TICKS) {
+			pendingServerMessage = null;
 		}
 	}
 
@@ -317,6 +349,7 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 		bobber.reset();
 		spot.reset();
 		catchesToIdentify.clear();
+		pendingServerMessage = null;
 	}
 
 	private static BobberTracker.Hook snapshot(FishingHook hook) {

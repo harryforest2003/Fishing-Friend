@@ -74,10 +74,21 @@ public final class FishingFriendClientGameTest implements FabricClientGameTest {
 			context.waitTicks(130);
 			playedSounds.clear();
 			server.runCommand("tellraw @a \"That area is suffering from overfishing. At least 5 blocks away.\"");
-			context.waitTicks(20);
+			context.waitTicks(40);
 			assertNotPlayed(FISHED_OUT_SOUND, "for a server message long after casting");
 
-			// Just after reeling in, the same message marks this spot as fished out.
+			// The same message right as the bobber is reeled in marks this spot as fished out. Servers send it
+			// just before removing the bobber, so send it first here too.
+			server.runCommand("tellraw @a \"That area is suffering from overfishing. At least 5 blocks away.\"");
+			useRod(context);
+			context.waitFor(client -> playedSounds.contains(FISHED_OUT_SOUND), 40);
+
+			// And it still counts when it arrives just after the reel. Cast the other way, since the spot just
+			// marked as fished out would make this a repeat of the same warning.
+			playedSounds.clear();
+			face(server, 0);
+			useRod(context);
+			context.waitTicks(30);
 			useRod(context);
 			server.runCommand("tellraw @a \"That area is suffering from overfishing. At least 5 blocks away.\"");
 			context.waitFor(client -> playedSounds.contains(FISHED_OUT_SOUND), 40);

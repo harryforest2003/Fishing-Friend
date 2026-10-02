@@ -325,6 +325,20 @@ class BobberTrackerTest {
 	}
 
 	@Test
+	void reelingInCountsAsRodUseSinceAnEarlierTick() {
+		for (int i = 0; i < 150; i++) {
+			tick(bobbing(false));
+		}
+		long messageArrived = now;
+		assertEquals(true, tracker.isOut());
+		assertEquals(false, tracker.usedRodSince(messageArrived));
+
+		tick(null);
+		assertEquals(false, tracker.isOut());
+		assertEquals(true, tracker.usedRodSince(messageArrived));
+	}
+
+	@Test
 	void clickingWithSomethingElseIsNotRodUse() {
 		holdingRod = false;
 		pressUse = true;
