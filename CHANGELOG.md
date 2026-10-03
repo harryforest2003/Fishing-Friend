@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1
+
+- Reeling in too early or too late no longer marks the spot as overfished. An empty reel only counts if you reeled in within 0.75 seconds of the bite; slower empty reels count as missed bites. The server's own overfishing message still works however slow you are.
+- The distance message now measures from where your cast would actually land (the mod runs the same physics as the bobber), instead of where your crosshair meets the water. Looking at the horizon, those can be 10+ blocks apart.
+- The distance message no longer blinks when your aim briefly leaves the water or while the bobber is in the air, and it updates twice as often.
+
 ## 1.2.0
 
 - Far fewer action bar messages. Only two are left: "Reel in now!" when a fish bites, and how much further away to cast while you're aiming at (or fishing in) an overfished spot.

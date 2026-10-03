@@ -15,6 +15,9 @@ package io.github.harryforest2003.fishingfriend;
  *       disappears, the server accepted the catch.</li>
  *   <li>Overfishing rules (for example mcMMO's) delete that item before it spawns. Reeling in on time
  *       and then seeing no item is the signal that the spot is fished out.</li>
+ *   <li>The biting flag can be stale: the update saying a bite ended can arrive after the bobber is gone,
+ *       or not at all. So a reel only counts as on time if it came quickly after the bite started, well
+ *       inside the shortest window the server allows (20 ticks in vanilla).</li>
  *   <li>The server removes the bobber by itself once the player is more than 32 blocks away.</li>
  * </ul>
  *
@@ -64,6 +67,13 @@ public final class BobberTracker<T> {
 		default void onEmptyCatch(Pos at, int reactionTicks) {
 		}
 
+		/**
+		 * The player reeled in during what looked like a bite but too slowly to be sure the server still
+		 * counted it, and nothing came out. Treated as a missed bite, not as a fished-out spot.
+		 */
+		default void onReeledInLate(int reactionTicks) {
+		}
+
 		/** The player walked too far away and the server removed the bobber. */
 		default void onLineSnapped() {
 		}
@@ -103,6 +113,7 @@ public final class BobberTracker<T> {
 
 	private final Listener<T> listener;
 	private int emptyCatchWaitTicks = 20;
+	private int maxOnTimeReactionTicks = 15;
 
 	private int hookId = NO_HOOK;
 	private Pos hookPos;
@@ -132,6 +143,11 @@ public final class BobberTracker<T> {
 	/** How long to wait after reeling in for the catch to show up before calling it empty. */
 	public void setEmptyCatchWaitTicks(int ticks) {
 		this.emptyCatchWaitTicks = Math.max(1, ticks);
+	}
+
+	/** The slowest reaction (ticks from the bite to reeling in) that still counts as on time for an empty catch. */
+	public void setMaxOnTimeReactionTicks(int ticks) {
+		this.maxOnTimeReactionTicks = Math.max(1, ticks);
 	}
 
 	/** Where the bobber is (or last was), or null if none has been cast. */
@@ -199,7 +215,11 @@ public final class BobberTracker<T> {
 				listener.onCatch(awaitPos, null, awaitReaction);
 			} else if (now >= awaitDeadline) {
 				awaitingCatch = false;
-				listener.onEmptyCatch(awaitPos, awaitReaction);
+				if (awaitReaction <= maxOnTimeReactionTicks) {
+					listener.onEmptyCatch(awaitPos, awaitReaction);
+				} else {
+					listener.onReeledInLate(awaitReaction);
+				}
 			}
 		}
 	}

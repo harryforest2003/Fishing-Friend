@@ -71,6 +71,11 @@ class BobberTrackerTest {
 			}
 
 			@Override
+			public void onReeledInLate(int reactionTicks) {
+				events.add("late in " + reactionTicks + "@" + now);
+			}
+
+			@Override
 			public void onLineSnapped() {
 				events.add("snapped@" + now);
 			}
@@ -196,6 +201,48 @@ class BobberTrackerTest {
 		idle(40);
 
 		assertEquals(List.of("bite@6", "empty in 1@28"), events);
+	}
+
+	@Test
+	void aSlowReelWithNothingCaughtIsLateNotFishedOut() {
+		castAndSettle();
+		tick(bobbing(true));
+		for (int i = 0; i < 25; i++) {
+			tick(bobbing(true));
+		}
+		reelIn();
+		tick(null);
+		idle(40);
+
+		assertEquals(List.of("bite@6", "late in 26@53"), events);
+	}
+
+	@Test
+	void aStaleBiteFlagDoesNotMakeALaterReelLookOnTime() {
+		castAndSettle();
+		// The update saying the bite ended never arrives, so the flag stays set long after the window closed.
+		for (int i = 0; i < 200; i++) {
+			tick(bobbing(true));
+		}
+		reelIn();
+		tick(null);
+		idle(40);
+
+		assertEquals(List.of("bite@6", "late in 200@227"), events);
+	}
+
+	@Test
+	void aSlowReelThatStillCatchesSomethingIsACatch() {
+		castAndSettle();
+		for (int i = 0; i < 26; i++) {
+			tick(bobbing(true));
+		}
+		reelIn();
+		tick(null);
+		tracker.onItemSpawned(now, WATER, "cod");
+		idle(40);
+
+		assertEquals(List.of("bite@6", "catch cod in 26@33"), events);
 	}
 
 	@Test

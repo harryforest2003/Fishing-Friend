@@ -1,5 +1,7 @@
 package io.github.harryforest2003.fishingfriend.test;
 
+import io.github.harryforest2003.fishingfriend.BobberTracker.Pos;
+import io.github.harryforest2003.fishingfriend.CastPrediction;
 import io.github.harryforest2003.fishingfriend.config.FishingFriendConfigScreen;
 import io.github.harryforest2003.fishingfriend.config.SoundPresets;
 import io.github.harryforest2003.fishingfriend.stats.FishingStats;
@@ -77,6 +79,12 @@ public final class FishingFriendClientGameTest implements FabricClientGameTest {
 				OverfishingRule.active = false;
 			}
 			assertNoMessage("This spot", "about the spot being fished out (the sound is enough)");
+
+			// The landing prediction behind the distance message matches where the bobber really lands, both
+			// looking down and looking out at the horizon.
+			checkPrediction(context, server, 0, 25);
+			checkPrediction(context, server, 180, 0);
+			face(server, 0);
 
 			// Aiming at the fished-out spot with a rod shows how much further to cast. Aiming far enough away
 			// clears it, and aiming back brings it back.
@@ -190,8 +198,35 @@ public final class FishingFriendClientGameTest implements FabricClientGameTest {
 
 	/** Turns the player to {@code yaw} (0 = south), looking a little down at the water. */
 	private void face(TestServerContext server, int yaw) {
+		face(server, yaw, 25);
+	}
+
+	private void face(TestServerContext server, int yaw, int pitch) {
 		// Block centres are x + 0.5 even for negative coordinates (block -10 spans -10 to -9).
-		server.runCommand(String.format(Locale.ROOT, "tp @a %.1f %d %.1f %d 25", feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5, yaw));
+		server.runCommand(String.format(Locale.ROOT, "tp @a %.1f %d %.1f %d %d", feet.getX() + 0.5, feet.getY(), feet.getZ() + 0.5, yaw, pitch));
+	}
+
+	/** Predicts a cast, makes it, and checks the bobber hits the water close to the prediction. */
+	private void checkPrediction(ClientGameTestContext context, TestServerContext server, int yaw, int pitch) {
+		face(server, yaw, pitch);
+		context.waitTicks(5);
+		Pos predicted = context.computeOnClient(client -> CastPrediction.landingPoint(client.level, client.player));
+		if (predicted == null) {
+			throw new AssertionError("no landing predicted for yaw " + yaw + " pitch " + pitch);
+		}
+		useRod(context);
+		context.waitFor(client -> client.player.fishing != null && client.player.fishing.isInWater(), 100);
+		Pos actual = context.computeOnClient(client -> new Pos(client.player.fishing.getX(), client.player.fishing.getY(), client.player.fishing.getZ()));
+		useRod(context);
+		context.waitTicks(10);
+
+		double error = Math.hypot(actual.x() - predicted.x(), actual.z() - predicted.z());
+		double reach = Math.hypot(actual.x() - (feet.getX() + 0.5), actual.z() - (feet.getZ() + 0.5));
+		System.out.println(String.format(Locale.ROOT, "FISHING_FRIEND_PREDICTION yaw=%d pitch=%d landed=%.2f_blocks_out error=%.2f_blocks",
+			yaw, pitch, reach, error));
+		if (error > 1.5) {
+			throw new AssertionError("predicted landing " + predicted + " but the bobber landed at " + actual);
+		}
 	}
 
 	private void castAndWaitForBite(ClientGameTestContext context) {

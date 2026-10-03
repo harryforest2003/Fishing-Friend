@@ -40,8 +40,9 @@ def main():
             problems.append(f"missing screenshot {name}")
 
     for line in text.splitlines():
-        if "FISHING_FRIEND_TICK_COST" in line:
-            print("tick cost: " + line[line.index("FISHING_FRIEND_TICK_COST") + len("FISHING_FRIEND_TICK_COST "):].strip())
+        for marker, label in (("FISHING_FRIEND_TICK_COST", "tick cost"), ("FISHING_FRIEND_PREDICTION", "cast prediction")):
+            if marker in line:
+                print(label + ": " + line[line.index(marker) + len(marker) + 1:].strip())
 
     stats_file = run_dir / "config" / "fishingfriend-stats.json"
     if stats_file.exists():

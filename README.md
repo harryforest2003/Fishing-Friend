@@ -7,7 +7,7 @@ A client-side Fabric mod that watches your fishing bobber for you, so you can st
   - you reel in on time but nothing comes out (the server deleted your catch);
   - the server says so (mcMMO's "suffering from overfishing" message and similar, in chat or the action bar);
   - you reach the number of catches your server allows in one spot.
-- **Distance message:** while you're holding a rod and aiming at (or fishing in) an overfished spot, the action bar shows how much further away you need to cast. It disappears once you're far enough away.
+- **Distance message:** while you're holding a rod and about to cast into (or fishing in) an overfished spot, the action bar shows how much further away you need to cast. It works out where your cast would land, using the bobber's own physics, and disappears once that's far enough away.
 - **`/fishingstats`:** casts, bites, catches, misses, fished-out reels, catches per hour, reaction time, fish/treasure/junk and your top catches.
 - **Toggle key:** turn the mod on and off without opening any menus.
 - **Bobber warnings (off by default):** messages when your bobber lands on the ground, hooks a mob, a fish gets away, or your line snaps.
@@ -31,7 +31,7 @@ Requires [Fabric Loader](https://fabricmc.net/use/) and [Fabric API](https://mod
 
 When a fish bites, the server marks your bobber as "biting" and sends that to your client. That flag is what makes the bobber dip, and it stays set for exactly the window in which reeling in catches the fish. Fishing Friend watches that flag on your own bobber.
 
-When you reel in while the flag is still set, the server spawns your catch at the bobber. If no item appears there (or in your inventory) within a second, the catch was taken away, which is how overfishing rules like mcMMO's work. Reeling in too early or too late never counts.
+When you reel in while the flag is still set, the server spawns your catch at the bobber. If no item appears there (or in your inventory) within a second, the catch was taken away, which is how overfishing rules like mcMMO's work. Because the flag can arrive late, an empty reel only counts if you reeled in within 0.75 seconds of the bite (`maxOnTimeReactionTicks` in the config file). Reeling in too early or too late never counts.
 
 A fished-out spot is remembered until you catch something again, matching how mcMMO resets its count. Fishing it again anyway plays the alert again. Distances are measured along the x and z axes the way servers measure them, so 3 blocks diagonally isn't counted as 3 blocks away.
 

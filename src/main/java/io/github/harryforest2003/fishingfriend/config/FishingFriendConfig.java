@@ -53,6 +53,11 @@ public final class FishingFriendConfig {
 
 	/** Ticks to wait after reeling in for the catch before deciding nothing was caught. */
 	public int emptyCatchWaitTicks = 20;
+	/**
+	 * An empty reel only means the spot is fished out if it came this many ticks or fewer after the bite.
+	 * Slower reels may simply have missed the bite window.
+	 */
+	public int maxOnTimeReactionTicks = 15;
 
 	public static final class Alert {
 		/** Whether the sound plays. */
@@ -133,6 +138,7 @@ public final class FishingFriendConfig {
 		moveDistance = clamp(moveDistance, 1, 64);
 		catchesPerSpot = clamp(catchesPerSpot, 0, 100);
 		emptyCatchWaitTicks = clamp(emptyCatchWaitTicks, 1, 200);
+		maxOnTimeReactionTicks = clamp(maxOnTimeReactionTicks, 1, 40);
 	}
 
 	private static Path path() {

@@ -12,7 +12,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.network.chat.Component;
-import net.minecraft.tags.FluidTags;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -22,9 +21,6 @@ import net.minecraft.world.item.FishingRodItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
-import net.minecraft.world.phys.Vec3;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -39,10 +35,13 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 	private static final int MESSAGE_TICKS = 50;
 	/** The action bar fades after 3 seconds, so the distance message is re-sent more often than that. */
 	private static final int DISTANCE_REFRESH_TICKS = 20;
-	/** How often (in ticks) to re-check where the player is aiming while the distance message is relevant. */
-	private static final int AIM_CHECK_TICKS = 4;
-	/** How far away the player can aim at water when looking for a new spot. */
-	private static final double AIM_RANGE = 32;
+	/** How often (in ticks) to re-check where a cast would land while the distance message is relevant. */
+	private static final int AIM_CHECK_TICKS = 2;
+	/**
+	 * How long to keep showing the last distance when there's briefly nothing to measure (a cast that would
+	 * hit the shore, or the bobber still in the air), so the message doesn't blink.
+	 */
+	private static final int DISTANCE_GRACE_TICKS = 20;
 	private static final int STATS_SAVE_TICKS = 20 * 30;
 	/**
 	 * Servers send overfishing warnings the moment you cast or reel in. Ignoring them at other times
@@ -68,6 +67,9 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 	private Component lastDistanceMessage;
 	private long distanceShownAt;
 	private boolean distanceShowing;
+	private int distanceBlocks;
+	private boolean distanceFromBobber;
+	private long distanceMeasuredAt = Long.MIN_VALUE;
 	/** True while this mod is putting its own message in the action bar, which on 26.x also fires the message event. */
 	private boolean showingOwnMessage;
 	private Runnable pendingServerMessage;
@@ -108,6 +110,7 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 		FishingHook fishingHook = player.fishing;
 		if (fishingHook != null || bobber.isOut() || bobber.isAwaitingCatch()) {
 			bobber.setEmptyCatchWaitTicks(config.emptyCatchWaitTicks);
+			bobber.setMaxOnTimeReactionTicks(config.maxOnTimeReactionTicks);
 			spot.setMoveDistance(config.moveDistance);
 			spot.setCatchLimit(config.catchesPerSpot);
 			BobberTracker.Player me = new BobberTracker.Player(
@@ -232,6 +235,11 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 	}
 
 	@Override
+	public void onReeledInLate(int reactionTicks) {
+		StatsStore.record(stats -> stats.missedBites++);
+	}
+
+	@Override
 	public void onLineSnapped() {
 		StatsStore.record(stats -> stats.lineSnaps++);
 		bobberWarning(Component.translatable("fishingfriend.message.line_snapped"));
@@ -251,8 +259,8 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 	// --- Helpers ---
 
 	/**
-	 * While the player is actually fishing near a fished-out spot (holding a rod, no menu open, and aiming at
-	 * or fishing in water that's too close), shows how much further away they need to cast.
+	 * While the player is actually fishing near a fished-out spot (holding a rod, no menu open, and about to
+	 * cast into it or with the bobber in it), shows how much further away they need to cast.
 	 */
 	private void updateDistanceMessage(Minecraft client, LocalPlayer player, FishingFriendConfig config) {
 		if (!config.distanceMessage || !spot.hasFishedOutSpot() || !isHoldingRod(player) || VersionCompat.isScreenOpen(client)) {
@@ -262,18 +270,36 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 		if (ticks % AIM_CHECK_TICKS != 0) {
 			return;
 		}
-		boolean bobberInWater = bobber.inWater();
-		Pos target = bobberInWater ? bobber.hookPos() : aimedWater(client, player);
-		int blocks = spot.blocksToGo(target);
-		if (blocks == 0) {
+
+		// With a bobber in the water, measure from it; otherwise from where a cast would land right now.
+		Pos target = null;
+		boolean fromBobber = false;
+		if (bobber.isOut()) {
+			if (bobber.inWater()) {
+				target = bobber.hookPos();
+				fromBobber = true;
+			}
+		} else if (client.level != null) {
+			target = CastPrediction.landingPoint(client.level, player);
+		}
+		if (target != null) {
+			distanceBlocks = spot.blocksToGo(target);
+			distanceFromBobber = fromBobber;
+			distanceMeasuredAt = ticks;
+		} else if (ticks - distanceMeasuredAt > DISTANCE_GRACE_TICKS) {
+			distanceBlocks = 0;
+		}
+		if (distanceBlocks == 0) {
 			hideDistanceMessage();
 			return;
 		}
-		String key = bobberInWater ? "fishingfriend.message.distance.bobber" : "fishingfriend.message.distance.aim";
-		Component message = Component.translatable(blocks == 1 ? key + ".one" : key, blocks).withStyle(ChatFormatting.YELLOW);
-		// Show changes straight away (e.g. aiming back into the spot); otherwise just keep it from fading.
+
+		String key = distanceFromBobber ? "fishingfriend.message.distance.bobber" : "fishingfriend.message.distance.aim";
+		Component message = Component.translatable(distanceBlocks == 1 ? key + ".one" : key, distanceBlocks)
+			.withStyle(ChatFormatting.YELLOW);
+		// Show changes straight away; otherwise re-send often enough that it never fades.
 		boolean changed = !message.equals(lastDistanceMessage);
-		if (ticks >= messageUntil && (changed || ticks - distanceShownAt >= DISTANCE_REFRESH_TICKS)) {
+		if (ticks >= messageUntil && (changed || !distanceShowing || ticks - distanceShownAt >= DISTANCE_REFRESH_TICKS)) {
 			showOverlay(message);
 			distanceShownAt = ticks;
 			distanceShowing = true;
@@ -288,19 +314,8 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 		}
 		distanceShowing = false;
 		lastDistanceMessage = null;
-	}
-
-	/** The water the player's crosshair is on, or null if they are not looking at water. */
-	private static Pos aimedWater(Minecraft client, LocalPlayer player) {
-		HitResult hit = player.pick(AIM_RANGE, 1.0f, true);
-		if (client.level == null || hit.getType() != HitResult.Type.BLOCK) {
-			return null;
-		}
-		if (!client.level.getFluidState(((BlockHitResult) hit).getBlockPos()).is(FluidTags.WATER)) {
-			return null;
-		}
-		Vec3 at = hit.getLocation();
-		return new Pos(at.x, at.y, at.z);
+		distanceBlocks = 0;
+		distanceMeasuredAt = Long.MIN_VALUE;
 	}
 
 	/** Records what each catch was once its item data has arrived (it follows the spawn by a tick). */
