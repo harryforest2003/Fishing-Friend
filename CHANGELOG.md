@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0
+
+- Far fewer action bar messages. Only two are left: "Reel in now!" when a fish bites, and how much further away to cast while you're aiming at (or fishing in) an overfished spot.
+- The distance message only shows while you're holding a rod with no menu open, so nothing piles up while the game is in the background. It clears as soon as you're far enough away.
+- Removed the "spot fished out", "far enough" and "running low" messages and the always-on "aim at water" reminder. The fished-out sound still plays.
+- Bobber warnings are now off by default (existing settings are switched off once); turn them back on under Spots & Messages if you want them.
+- Less work every tick: nothing runs while you aren't fishing, the aim check runs every few ticks and only near an overfished spot, and server chat is only read around a cast or reel.
+
 ## 1.1.1
 
 - Fixed a crash on Minecraft 26.x when a server warned that fish were running low. The mod's own action bar message was read back as another server warning, over and over.

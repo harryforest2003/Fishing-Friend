@@ -92,14 +92,14 @@ public final class FishingFriendConfigScreen extends Screen {
 			"fishingfriend.config.catches_per_spot.tooltip"));
 		y += ROW;
 
-		addRenderableWidget(withTooltip(toggle(left, y, COLUMN_WIDTH, "fishingfriend.config.move_reminder",
-			() -> config.moveReminder, value -> config.moveReminder = value), "fishingfriend.config.move_reminder.tooltip"));
-		addRenderableWidget(withTooltip(toggle(right, y, COLUMN_WIDTH, "fishingfriend.config.server_messages",
-			() -> config.readServerMessages, value -> config.readServerMessages = value), "fishingfriend.config.server_messages.tooltip"));
+		addRenderableWidget(withTooltip(toggle(left, y, COLUMN_WIDTH, "fishingfriend.config.reel_in_message",
+			() -> config.reelInMessage, value -> config.reelInMessage = value), "fishingfriend.config.reel_in_message.tooltip"));
+		addRenderableWidget(withTooltip(toggle(right, y, COLUMN_WIDTH, "fishingfriend.config.distance_message",
+			() -> config.distanceMessage, value -> config.distanceMessage = value), "fishingfriend.config.distance_message.tooltip"));
 		y += ROW;
 
-		addRenderableWidget(withTooltip(toggle(left, y, COLUMN_WIDTH, "fishingfriend.config.action_bar_alerts",
-			() -> config.actionBarAlerts, value -> config.actionBarAlerts = value), "fishingfriend.config.action_bar_alerts.tooltip"));
+		addRenderableWidget(withTooltip(toggle(left, y, COLUMN_WIDTH, "fishingfriend.config.server_messages",
+			() -> config.readServerMessages, value -> config.readServerMessages = value), "fishingfriend.config.server_messages.tooltip"));
 		addRenderableWidget(withTooltip(toggle(right, y, COLUMN_WIDTH, "fishingfriend.config.bobber_warnings",
 			() -> config.bobberWarnings, value -> config.bobberWarnings = value), "fishingfriend.config.bobber_warnings.tooltip"));
 		y += ROW + 6;

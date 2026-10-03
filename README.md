@@ -5,12 +5,12 @@ A client-side Fabric mod that watches your fishing bobber for you, so you can st
 - **Bite alert:** a ding and **"Reel in now!"** above the hotbar the moment a fish bites (when the bobber dips).
 - **Fished-out alert:** a second sound when your spot stops giving fish. It's detected three ways:
   - you reel in on time but nothing comes out (the server deleted your catch);
-  - the server says so in chat (mcMMO's "suffering from overfishing" message and similar);
+  - the server says so (mcMMO's "suffering from overfishing" message and similar, in chat or the action bar);
   - you reach the number of catches your server allows in one spot.
-- **Move reminder:** once a spot is fished out, a message above the hotbar tells you how many more blocks to move. It shows whenever you aim at the old spot or your bobber lands in it, says "Far enough, cast here!" when you aim far enough away, and comes back if you aim back into the spot.
-- **Bobber warnings:** above-the-hotbar messages when your bobber lands on the ground, hooks a mob, a fish gets away, or your line snaps because you walked too far.
+- **Distance message:** while you're holding a rod and aiming at (or fishing in) an overfished spot, the action bar shows how much further away you need to cast. It disappears once you're far enough away.
 - **`/fishingstats`:** casts, bites, catches, misses, fished-out reels, catches per hour, reaction time, fish/treasure/junk and your top catches.
 - **Toggle key:** turn the mod on and off without opening any menus.
+- **Bobber warnings (off by default):** messages when your bobber lands on the ground, hooks a mob, a fish gets away, or your line snaps.
 
 Everything can be changed in-game through [Mod Menu](https://modrinth.com/mod/modmenu).
 
@@ -33,7 +33,7 @@ When a fish bites, the server marks your bobber as "biting" and sends that to yo
 
 When you reel in while the flag is still set, the server spawns your catch at the bobber. If no item appears there (or in your inventory) within a second, the catch was taken away, which is how overfishing rules like mcMMO's work. Reeling in too early or too late never counts.
 
-A fished-out spot is remembered until you catch something again, matching how mcMMO resets its count. Distances are measured along the x and z axes the way servers measure them, so 3 blocks diagonally isn't counted as 3 blocks away.
+A fished-out spot is remembered until you catch something again, matching how mcMMO resets its count. Fishing it again anyway plays the alert again. Distances are measured along the x and z axes the way servers measure them, so 3 blocks diagonally isn't counted as 3 blocks away.
 
 It only reads what your client already receives, so it works on any server, sends nothing extra, and never fishes for you.
 
@@ -45,12 +45,12 @@ With Mod Menu installed, open **Mods → Fishing Friend → configure**.
 - **Spots & Messages page:**
   - **Move Distance:** how far the next spot has to be. Set it to your server's rule.
   - **Catches per Spot:** how many catches your server allows per spot. Off by default.
-  - Switches for the move reminder, reading server messages, action bar alerts and bobber warnings.
+  - Switches for the "Reel in now!" message, the distance message, reading server messages, and bobber warnings.
 
 The toggle key is unbound by default; set it under **Options → Controls → Fishing Friend**.
 
 Settings are saved to `config/fishingfriend.json`. A few extra options live only there:
-- `fishedOutPhrases` and `runningLowPhrases`: the chat phrases to look for. Match your server's wording if it isn't mcMMO.
+- `fishedOutPhrases`: the server phrases that mean a spot is fished out. Match your server's wording if it isn't mcMMO.
 - any sound id for the alerts, e.g. `minecraft:entity.cat.ambient`;
 - `emptyCatchWaitTicks`: how long to wait for a catch (20 ticks = 1 second).
 
@@ -84,10 +84,12 @@ It downloads each Minecraft client (remapped to Fabric's intermediary names for 
 Unit tests for the bobber, spot and stats logic run as part of `./gradlew build`.
 
 There is also an in-game test that builds a pond and fishes for real. It checks:
-- the alerts and a simulated overfishing rule;
+- the alerts and a simulated overfishing rule, including fishing the same spot twice;
 - server warnings in chat and in the action bar;
-- the move reminder;
+- exactly which action bar messages appear, and that none do with a menu open or without a rod;
 - `/fishingstats` and the config screen.
+
+It also times the mod's per-tick code and prints the average and worst tick.
 
 GitHub runs it on every push, on a virtual screen, for each build. It also runs the released 1.21.9–1.21.11 jar on 1.21.10, a version it wasn't compiled against, using the harness in `testing/jar-test`. Screenshots from each run are attached to the workflow run. To run it locally (a Minecraft window opens):
 

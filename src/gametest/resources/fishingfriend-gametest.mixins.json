@@ -5,7 +5,9 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "FishingHookMixin",
-    "SoundsMixin"
+    "FishingWatcherMixin",
+    "SoundsMixin",
+    "VersionCompatMixin"
   ],
   "injectors": {
     "defaultRequire": 1

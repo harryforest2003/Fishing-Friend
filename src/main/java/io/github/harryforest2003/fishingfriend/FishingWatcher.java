@@ -35,12 +35,14 @@ import java.util.Set;
  * report into sounds, action bar messages and stats.
  */
 final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTracker.Listener {
-	/** How long a one-off action bar message keeps the move reminder from replacing it. */
+	/** How long "Reel in now!" or a bobber warning keeps the distance message from replacing it. */
 	private static final int MESSAGE_TICKS = 50;
-	/** The action bar fades after 3 seconds, so the move reminder is re-sent more often than that. */
-	private static final int REMINDER_REFRESH_TICKS = 10;
+	/** The action bar fades after 3 seconds, so the distance message is re-sent more often than that. */
+	private static final int DISTANCE_REFRESH_TICKS = 20;
+	/** How often (in ticks) to re-check where the player is aiming while the distance message is relevant. */
+	private static final int AIM_CHECK_TICKS = 4;
 	/** How far away the player can aim at water when looking for a new spot. */
-	private static final double AIM_RANGE = 48;
+	private static final double AIM_RANGE = 32;
 	private static final int STATS_SAVE_TICKS = 20 * 30;
 	/**
 	 * Servers send overfishing warnings the moment you cast or reel in. Ignoring them at other times
@@ -63,7 +65,9 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 	private long messageUntil;
 	private boolean inWorld;
 	private boolean useWasDown;
-	private Component lastReminder;
+	private Component lastDistanceMessage;
+	private long distanceShownAt;
+	private boolean distanceShowing;
 	/** True while this mod is putting its own message in the action bar, which on 26.x also fires the message event. */
 	private boolean showingOwnMessage;
 	private Runnable pendingServerMessage;
@@ -95,31 +99,41 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 			return;
 		}
 
-		bobber.setEmptyCatchWaitTicks(config.emptyCatchWaitTicks);
-		spot.setMoveDistance(config.moveDistance);
-		spot.setCatchLimit(config.catchesPerSpot);
-
 		boolean useDown = client.options.keyUse.isDown();
-		BobberTracker.Player me = new BobberTracker.Player(
-			pos(player), isHoldingRod(player), useDown && !useWasDown, countItems(player.getInventory()));
+		boolean usePressed = useDown && !useWasDown;
 		useWasDown = useDown;
 
-		BobberTracker.Hook hook = snapshot(player.fishing);
-		bobber.tick(ticks, hook, me);
-		if (hook != null) {
-			StatsStore.record(stats -> stats.fishingTicks++);
+		// Only follow the bobber while there is one (or a catch is still being waited for), so a player who
+		// isn't fishing costs next to nothing.
+		FishingHook fishingHook = player.fishing;
+		if (fishingHook != null || bobber.isOut() || bobber.isAwaitingCatch()) {
+			bobber.setEmptyCatchWaitTicks(config.emptyCatchWaitTicks);
+			spot.setMoveDistance(config.moveDistance);
+			spot.setCatchLimit(config.catchesPerSpot);
+			BobberTracker.Player me = new BobberTracker.Player(
+				pos(player), isHoldingRod(player), usePressed, countItems(player.getInventory()));
+			BobberTracker.Hook hook = snapshot(fishingHook);
+			bobber.tick(ticks, hook, me);
+			if (hook != null) {
+				StatsStore.record(stats -> stats.fishingTicks++);
+			}
 		}
 
 		handlePendingServerMessage();
-		identifyCatches();
-		updateMoveReminder(client, player, config);
+		if (!catchesToIdentify.isEmpty()) {
+			identifyCatches();
+		}
+		updateDistanceMessage(client, player, config);
 		if (ticks % STATS_SAVE_TICKS == 0) {
 			StatsStore.saveIfChanged();
 		}
 	}
 
 	void onEntityLoad(Entity entity, ClientLevel level) {
-		if (inWorld && entity instanceof ItemEntity item) {
+		if (!bobber.isOut() && !bobber.isAwaitingCatch()) {
+			return;
+		}
+		if (entity instanceof ItemEntity item) {
 			bobber.onItemSpawned(ticks, pos(entity), item);
 		}
 	}
@@ -129,16 +143,16 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 		if (showingOwnMessage || !inWorld || !config.enabled || !config.readServerMessages) {
 			return;
 		}
-		String text = message.getString();
-		Runnable warning;
-		if (ServerMessages.containsAny(text, config.fishedOutPhrases)) {
-			int blocks = ServerMessages.blocksMentioned(text);
-			warning = () -> spot.onServerSaysFishedOut(bobber.hookPos(), blocks, ticks);
-		} else if (ServerMessages.containsAny(text, config.runningLowPhrases)) {
-			warning = spot::onServerSaysRunningLow;
-		} else {
+		// Busy servers send a lot of chat; only read it around a cast or reel, when a warning could arrive.
+		if (!bobber.isOut() && !bobber.usedRodWithin(ticks, SERVER_MESSAGE_WINDOW_TICKS)) {
 			return;
 		}
+		String text = message.getString();
+		if (!ServerMessages.containsAny(text, config.fishedOutPhrases)) {
+			return;
+		}
+		int blocks = ServerMessages.blocksMentioned(text);
+		Runnable warning = () -> spot.onServerSaysFishedOut(bobber.hookPos(), blocks, ticks);
 
 		if (bobber.usedRodWithin(ticks, SERVER_MESSAGE_WINDOW_TICKS)) {
 			warning.run();
@@ -183,7 +197,12 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 	public void onBite() {
 		StatsStore.record(stats -> stats.bites++);
 		FishingFriendConfig config = FishingFriendConfig.get();
-		alert(config.bite, Component.translatable("fishingfriend.message.bite").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
+		if (config.bite.enabled) {
+			Sounds.play(config.bite);
+		}
+		if (config.reelInMessage) {
+			showMessage(Component.translatable("fishingfriend.message.bite").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD));
+		}
 	}
 
 	@Override
@@ -220,51 +239,55 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 
 	// --- Spot events ---
 
-	@Override
-	public void onSpotRunningLow() {
-		if (FishingFriendConfig.get().actionBarAlerts) {
-			showMessage(Component.translatable("fishingfriend.message.running_low").withStyle(ChatFormatting.YELLOW));
-		}
-	}
-
+	/** The spot is fished out: just the sound. How far to move shows once the player aims at the water. */
 	@Override
 	public void onSpotFishedOut(boolean again) {
-		FishingFriendConfig config = FishingFriendConfig.get();
-		String key = again ? "fishingfriend.message.still_fished_out" : "fishingfriend.message.fished_out";
-		alert(config.fishedOut, Component.translatable(key).withStyle(ChatFormatting.RED));
-	}
-
-	@Override
-	public void onFarEnough() {
-		if (FishingFriendConfig.get().moveReminder) {
-			showMessage(Component.translatable("fishingfriend.message.far_enough").withStyle(ChatFormatting.GREEN));
+		FishingFriendConfig.Alert alert = FishingFriendConfig.get().fishedOut;
+		if (alert.enabled) {
+			Sounds.play(alert);
 		}
 	}
 
 	// --- Helpers ---
 
-	private void updateMoveReminder(Minecraft client, LocalPlayer player, FishingFriendConfig config) {
-		boolean bobberInWater = bobber.inWater();
-		Pos target = !spot.hasFishedOutSpot() ? null : bobberInWater ? bobber.hookPos() : aimedWater(client, player);
-		SpotTracker.Status status = spot.update(target);
-		if (!config.moveReminder || ticks < messageUntil) {
-			lastReminder = null;
+	/**
+	 * While the player is actually fishing near a fished-out spot (holding a rod, no menu open, and aiming at
+	 * or fishing in water that's too close), shows how much further away they need to cast.
+	 */
+	private void updateDistanceMessage(Minecraft client, LocalPlayer player, FishingFriendConfig config) {
+		if (!config.distanceMessage || !spot.hasFishedOutSpot() || !isHoldingRod(player) || VersionCompat.isScreenOpen(client)) {
+			hideDistanceMessage();
 			return;
 		}
-		Component reminder = switch (status) {
-			case NOT_AIMING -> Component.translatable("fishingfriend.message.reminder.aim", spot.requiredDistance());
-			case TOO_CLOSE -> {
-				int blocks = spot.blocksToGo(target);
-				String key = bobberInWater ? "fishingfriend.message.reminder.bobber" : "fishingfriend.message.reminder.closer";
-				yield Component.translatable(blocks == 1 ? key + ".one" : key, blocks);
-			}
-			default -> null;
-		};
-		// Show changes straight away (e.g. aiming back into the spot); otherwise just keep it from fading.
-		if (reminder != null && (!reminder.equals(lastReminder) || ticks % REMINDER_REFRESH_TICKS == 0)) {
-			showOverlay(reminder.copy().withStyle(ChatFormatting.YELLOW));
+		if (ticks % AIM_CHECK_TICKS != 0) {
+			return;
 		}
-		lastReminder = reminder;
+		boolean bobberInWater = bobber.inWater();
+		Pos target = bobberInWater ? bobber.hookPos() : aimedWater(client, player);
+		int blocks = spot.blocksToGo(target);
+		if (blocks == 0) {
+			hideDistanceMessage();
+			return;
+		}
+		String key = bobberInWater ? "fishingfriend.message.distance.bobber" : "fishingfriend.message.distance.aim";
+		Component message = Component.translatable(blocks == 1 ? key + ".one" : key, blocks).withStyle(ChatFormatting.YELLOW);
+		// Show changes straight away (e.g. aiming back into the spot); otherwise just keep it from fading.
+		boolean changed = !message.equals(lastDistanceMessage);
+		if (ticks >= messageUntil && (changed || ticks - distanceShownAt >= DISTANCE_REFRESH_TICKS)) {
+			showOverlay(message);
+			distanceShownAt = ticks;
+			distanceShowing = true;
+		}
+		lastDistanceMessage = message;
+	}
+
+	/** Clears the distance message straight away once it no longer applies, rather than letting it linger. */
+	private void hideDistanceMessage() {
+		if (distanceShowing && ticks >= messageUntil) {
+			showOverlay(Component.empty());
+		}
+		distanceShowing = false;
+		lastDistanceMessage = null;
 	}
 
 	/** The water the player's crosshair is on, or null if they are not looking at water. */
@@ -317,15 +340,6 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 		}
 	}
 
-	private void alert(FishingFriendConfig.Alert alert, Component message) {
-		if (alert.enabled) {
-			Sounds.play(alert);
-		}
-		if (FishingFriendConfig.get().actionBarAlerts) {
-			showMessage(message);
-		}
-	}
-
 	private void bobberWarning(Component message) {
 		if (FishingFriendConfig.get().bobberWarnings) {
 			showMessage(message.copy().withStyle(ChatFormatting.YELLOW));
@@ -334,6 +348,7 @@ final class FishingWatcher implements BobberTracker.Listener<ItemEntity>, SpotTr
 
 	private void showMessage(Component message) {
 		messageUntil = ticks + MESSAGE_TICKS;
+		distanceShowing = false;
 		showOverlay(message);
 	}
 

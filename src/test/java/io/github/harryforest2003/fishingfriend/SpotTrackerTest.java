@@ -1,7 +1,6 @@
 package io.github.harryforest2003.fishingfriend;
 
 import io.github.harryforest2003.fishingfriend.BobberTracker.Pos;
-import io.github.harryforest2003.fishingfriend.SpotTracker.Status;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -9,6 +8,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SpotTrackerTest {
 	private static final Pos SPOT = new Pos(100, 62, 100);
@@ -18,22 +19,7 @@ class SpotTrackerTest {
 
 	@BeforeEach
 	void setUp() {
-		tracker = new SpotTracker(new SpotTracker.Listener() {
-			@Override
-			public void onSpotRunningLow() {
-				events.add("low");
-			}
-
-			@Override
-			public void onSpotFishedOut(boolean again) {
-				events.add(again ? "still fished out" : "fished out");
-			}
-
-			@Override
-			public void onFarEnough() {
-				events.add("far enough");
-			}
-		});
+		tracker = new SpotTracker(again -> events.add(again ? "still fished out" : "fished out"));
 		tracker.setMoveDistance(3);
 	}
 
@@ -42,48 +28,44 @@ class SpotTrackerTest {
 	}
 
 	@Test
-	void nothingToSayBeforeASpotIsFishedOut() {
-		assertEquals(Status.NONE, tracker.update(SPOT));
-		assertEquals(Status.NONE, tracker.update(null));
+	void nothingIsTooCloseBeforeASpotIsFishedOut() {
+		assertFalse(tracker.hasFishedOutSpot());
+		assertEquals(0, tracker.blocksToGo(SPOT));
 		assertEquals(List.of(), events);
 	}
 
 	@Test
-	void anEmptyCatchFishesOutTheSpotUntilThePlayerAimsFarEnough() {
+	void anEmptyCatchFishesOutTheSpot() {
 		tracker.onEmptyCatch(SPOT, 0);
 
-		assertEquals(Status.NOT_AIMING, tracker.update(null));
-		assertEquals(Status.TOO_CLOSE, tracker.update(at(1, 1)));
+		assertTrue(tracker.hasFishedOutSpot());
+		assertEquals(List.of("fished out"), events);
+	}
+
+	@Test
+	void blocksToGoCountsDownToZeroAtTheMoveDistance() {
+		tracker.onEmptyCatch(SPOT, 0);
+
+		assertEquals(3, tracker.blocksToGo(SPOT));
 		assertEquals(2, tracker.blocksToGo(at(1, 1)));
-		assertEquals(Status.FAR_ENOUGH, tracker.update(at(3, 0)));
-		assertEquals(List.of("fished out", "far enough"), events);
+		assertEquals(1, tracker.blocksToGo(at(2.5, 0)));
+		assertEquals(0, tracker.blocksToGo(at(3, 0)));
+		assertEquals(0, tracker.blocksToGo(at(0, -10)));
 	}
 
 	@Test
-	void theReminderComesBackWhenAimingBackIntoTheSpot() {
+	void notAimingAtWaterIsNeverTooClose() {
 		tracker.onEmptyCatch(SPOT, 0);
-		tracker.update(at(5, 0));
 
-		assertEquals(Status.TOO_CLOSE, tracker.update(at(1, 0)));
-		assertEquals(Status.FAR_ENOUGH, tracker.update(at(0, -4)));
-		assertEquals(List.of("fished out", "far enough", "far enough"), events);
-	}
-
-	@Test
-	void lookingAwayAfterFindingANewSpotIsQuiet() {
-		tracker.onEmptyCatch(SPOT, 0);
-		tracker.update(at(5, 0));
-
-		assertEquals(Status.NONE, tracker.update(null));
-		assertEquals(Status.TOO_CLOSE, tracker.update(SPOT));
+		assertEquals(0, tracker.blocksToGo(null));
 	}
 
 	@Test
 	void diagonalsOnlyCountTheLongerAxis() {
 		tracker.onEmptyCatch(SPOT, 0);
 
-		assertEquals(Status.TOO_CLOSE, tracker.update(at(2.5, 2.5)));
-		assertEquals(Status.FAR_ENOUGH, tracker.update(at(2.5, 3)));
+		assertEquals(1, tracker.blocksToGo(at(2.5, 2.5)));
+		assertEquals(0, tracker.blocksToGo(at(2.5, 3)));
 	}
 
 	@Test
@@ -91,7 +73,8 @@ class SpotTrackerTest {
 		tracker.onEmptyCatch(SPOT, 0);
 		tracker.onCatch(at(6, 0), 100);
 
-		assertEquals(Status.NONE, tracker.update(SPOT));
+		assertFalse(tracker.hasFishedOutSpot());
+		assertEquals(0, tracker.blocksToGo(SPOT));
 	}
 
 	@Test
@@ -106,15 +89,13 @@ class SpotTrackerTest {
 	void fishingTheSameSpotAgainAlertsAgain() {
 		tracker.onServerSaysFishedOut(SPOT, 0, 0);
 		tracker.onEmptyCatch(SPOT, 20);
-		tracker.update(at(6, 0));
 
 		// Later the player casts back into the same spot and the server complains again.
 		tracker.onServerSaysFishedOut(at(1, 0), 0, 400);
 		tracker.onEmptyCatch(at(1, 0), 420);
 
-		assertEquals(List.of("fished out", "far enough", "still fished out"), events);
-		assertEquals(Status.NOT_AIMING, tracker.update(null));
-		assertEquals(Status.TOO_CLOSE, tracker.update(SPOT));
+		assertEquals(List.of("fished out", "still fished out"), events);
+		assertEquals(3, tracker.blocksToGo(at(1, 0)));
 	}
 
 	@Test
@@ -132,20 +113,20 @@ class SpotTrackerTest {
 		tracker.onEmptyCatch(SPOT, 20);
 
 		assertEquals(6, tracker.requiredDistance());
-		assertEquals(Status.TOO_CLOSE, tracker.update(at(5, 0)));
-		assertEquals(Status.FAR_ENOUGH, tracker.update(at(6, 0)));
+		assertEquals(1, tracker.blocksToGo(at(5, 0)));
+		assertEquals(0, tracker.blocksToGo(at(6, 0)));
 	}
 
 	@Test
-	void theCatchLimitWarnsOneEarlyThenFishesOutTheSpot() {
+	void reachingTheCatchLimitFishesOutTheSpot() {
 		tracker.setCatchLimit(3);
 		tracker.onCatch(SPOT, 0);
 		tracker.onCatch(at(1, 0), 400);
-		assertEquals(List.of("low"), events);
+		assertEquals(List.of(), events);
 
 		tracker.onCatch(at(0, 1), 800);
-		assertEquals(List.of("low", "fished out"), events);
-		assertEquals(Status.TOO_CLOSE, tracker.update(SPOT));
+		assertEquals(List.of("fished out"), events);
+		assertEquals(3, tracker.blocksToGo(at(0, 1)));
 	}
 
 	@Test
@@ -156,6 +137,6 @@ class SpotTrackerTest {
 		tracker.onCatch(at(10, 0), 800);
 		tracker.onCatch(at(11, 0), 1200);
 
-		assertEquals(List.of("low", "low"), events);
+		assertEquals(List.of(), events);
 	}
 }

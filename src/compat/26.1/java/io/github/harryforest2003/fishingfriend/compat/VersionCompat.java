@@ -20,6 +20,11 @@ public final class VersionCompat {
 		client.setScreen(screen);
 	}
 
+	/** Whether a menu, chat or inventory screen is open (including the pause menu shown when the game loses focus). */
+	public static boolean isScreenOpen(Minecraft client) {
+		return client.screen != null;
+	}
+
 	/** Shows a short message above the hotbar. */
 	public static void showOverlayMessage(Minecraft client, Component message) {
 		if (client.player != null) {

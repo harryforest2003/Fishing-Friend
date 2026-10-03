@@ -154,6 +154,11 @@ public final class BobberTracker<T> {
 		return hookId != NO_HOOK;
 	}
 
+	/** Whether the player reeled in on a bite and the tracker is waiting to see if anything comes out. */
+	public boolean isAwaitingCatch() {
+		return awaitingCatch;
+	}
+
 	/** Whether the current bobber has settled in water. */
 	public boolean inWater() {
 		return hookId != NO_HOOK && landed && inWater;

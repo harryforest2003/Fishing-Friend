@@ -18,8 +18,12 @@ import java.util.List;
 /** Settings stored in {@code config/fishingfriend.json}. Edited live by the config screen. */
 public final class FishingFriendConfig {
 	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+	/** Bumped when defaults change in a way existing config files should pick up. */
+	private static final int CURRENT_VERSION = 2;
 	private static FishingFriendConfig instance = new FishingFriendConfig();
 
+	/** 0 for files written before 1.2.0. */
+	public int configVersion;
 	public boolean enabled = true;
 
 	/** Sound played when a fish bites. */
@@ -28,13 +32,14 @@ public final class FishingFriendConfig {
 	@SerializedName(value = "fishedOut", alternate = "emptyCatch")
 	public Alert fishedOut = new Alert(SoundPresets.VILLAGER_NO);
 
-	/** "Reel in now!", "Spot fished out" and similar messages above the hotbar. */
-	@SerializedName(value = "actionBarAlerts", alternate = "showMessages")
-	public boolean actionBarAlerts = true;
-	/** Keep reminding the player to move while they aim at or fish in a fished-out spot. */
-	public boolean moveReminder = true;
-	/** Action bar warnings when the bobber lands on the ground, hooks a mob, or the line snaps. */
-	public boolean bobberWarnings = true;
+	/** "Reel in now!" above the hotbar when a fish bites. */
+	@SerializedName(value = "reelInMessage", alternate = {"actionBarAlerts", "showMessages"})
+	public boolean reelInMessage = true;
+	/** How much further to cast, shown while aiming at or fishing in a fished-out spot. */
+	@SerializedName(value = "distanceMessage", alternate = "moveReminder")
+	public boolean distanceMessage = true;
+	/** Action bar warnings when the bobber lands on the ground, hooks a mob, a fish gets away, or the line snaps. */
+	public boolean bobberWarnings = false;
 
 	/** How far (in blocks) the next spot has to be from a fished-out one. Match your server's rule. */
 	public int moveDistance = 3;
@@ -45,8 +50,6 @@ public final class FishingFriendConfig {
 	public boolean readServerMessages = true;
 	/** Server messages containing any of these mean the spot is fished out. */
 	public List<String> fishedOutPhrases = new ArrayList<>(List.of("overfishing", "overfished"));
-	/** Server messages containing any of these mean the spot is about to run out. */
-	public List<String> runningLowPhrases = new ArrayList<>(List.of("many fish left", "fish are running low"));
 
 	/** Ticks to wait after reeling in for the catch before deciding nothing was caught. */
 	public int emptyCatchWaitTicks = 20;
@@ -85,13 +88,22 @@ public final class FishingFriendConfig {
 				FishingFriendConfig loaded = GSON.fromJson(reader, FishingFriendConfig.class);
 				if (loaded != null) {
 					instance = loaded;
+					instance.upgrade();
 				}
 			} catch (IOException | JsonParseException e) {
 				FishingFriendClient.LOGGER.warn("Could not read {}, using defaults", path, e);
 			}
 		}
+		instance.configVersion = CURRENT_VERSION;
 		instance.sanitize();
 		instance.save();
+	}
+
+	private void upgrade() {
+		if (configVersion < 2) {
+			// 1.2.0 trimmed the action bar down to "Reel in now!" and the distance message.
+			bobberWarnings = false;
+		}
 	}
 
 	public void save() {
@@ -117,9 +129,6 @@ public final class FishingFriendConfig {
 		fishedOut.sanitize(SoundPresets.VILLAGER_NO);
 		if (fishedOutPhrases == null) {
 			fishedOutPhrases = new ArrayList<>();
-		}
-		if (runningLowPhrases == null) {
-			runningLowPhrases = new ArrayList<>();
 		}
 		moveDistance = clamp(moveDistance, 1, 64);
 		catchesPerSpot = clamp(catchesPerSpot, 0, 100);

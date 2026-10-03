@@ -28,7 +28,11 @@ public final class FishingFriendClientGameTest implements FabricClientGameTest {
 	private static final int BITE_TIMEOUT_TICKS = 20 * 90;
 	private static final int ENTER = 257;
 
+	private static final String REEL_IN = "Reel in now!";
+	private static final String DISTANCE = "more block";
+
 	private final List<String> playedSounds = PlayedAlerts.SOUNDS;
+	private final List<String> messages = PlayedAlerts.MESSAGES;
 	private BlockPos feet;
 
 	@Override
@@ -41,6 +45,7 @@ public final class FishingFriendClientGameTest implements FabricClientGameTest {
 			// Reeling in on a bite: ding, the catch arrives, no fished-out alert, and it shows in the stats.
 			int itemsBefore = countItems(context);
 			castAndWaitForBite(context);
+			assertShown(REEL_IN, "when a fish bites");
 			useRod(context);
 			context.waitFor(client -> countItems(client.player.getInventory()) > itemsBefore, 100);
 			context.waitTicks(40);
@@ -71,17 +76,39 @@ public final class FishingFriendClientGameTest implements FabricClientGameTest {
 			} finally {
 				OverfishingRule.active = false;
 			}
+			assertNoMessage("This spot", "about the spot being fished out (the sound is enough)");
 
-			// Aiming at the fished-out spot shows the reminder, aiming away clears it, aiming back brings it back.
-			context.waitTicks(60);
-			context.takeScreenshot("fishingfriend-reminder-aiming-at-spot");
+			// Aiming at the fished-out spot with a rod shows how much further to cast. Aiming far enough away
+			// clears it, and aiming back brings it back.
+			messages.clear();
+			context.waitFor(client -> anyMessage(DISTANCE), 60);
+			context.takeScreenshot("fishingfriend-distance-aiming-at-spot");
 			face(server, 180);
-			context.waitTicks(5);
-			context.takeScreenshot("fishingfriend-reminder-far-enough");
-			context.waitTicks(60);
+			context.waitTicks(10);
+			messages.clear();
+			context.waitTicks(40);
+			assertNoMessage(DISTANCE, "when aiming far enough away");
+			context.takeScreenshot("fishingfriend-distance-far-enough");
 			face(server, 0);
-			context.waitTicks(5);
-			context.takeScreenshot("fishingfriend-reminder-back-in-spot");
+			context.waitFor(client -> anyMessage(DISTANCE), 40);
+			context.takeScreenshot("fishingfriend-distance-back-in-spot");
+
+			// Nothing at all without a rod in hand, or with a menu open (like the pause menu that opens when the
+			// game goes to the background).
+			server.runCommand("item replace entity @a weapon.mainhand with minecraft:air");
+			context.waitTicks(10);
+			messages.clear();
+			context.waitTicks(60);
+			assertNoMessages("without a rod in hand");
+			server.runCommand("item replace entity @a weapon.mainhand with minecraft:fishing_rod");
+			context.waitFor(client -> anyMessage(DISTANCE), 40);
+			context.setScreen(() -> new FishingFriendConfigScreen(null));
+			context.waitTicks(10);
+			messages.clear();
+			context.waitTicks(100);
+			assertNoMessages("with a menu open");
+			context.setScreen(() -> null);
+			context.waitTicks(10);
 
 			// Server warnings only count right after casting or reeling in, so ordinary chat can't trigger them.
 			face(server, 180);
@@ -108,12 +135,6 @@ public final class FishingFriendClientGameTest implements FabricClientGameTest {
 			server.runCommand("tellraw @a \"That area is suffering from overfishing. At least 5 blocks away.\"");
 			context.waitFor(client -> playedSounds.contains(FISHED_OUT_SOUND), 40);
 
-			// A running-low warning in the action bar. On 26.x the mod's own action bar message also arrives as a
-			// message event, which used to set off an endless loop and crash the game.
-			server.runCommand("title @a actionbar \"You sense that there might not be many fish left in this area.\"");
-			context.waitTicks(3);
-			context.takeScreenshot("fishingfriend-server-running-low");
-
 			// Reeling in before anything bites stays quiet.
 			face(server, 180);
 			playedSounds.clear();
@@ -139,6 +160,14 @@ public final class FishingFriendClientGameTest implements FabricClientGameTest {
 			context.takeScreenshot("fishingfriend-config-spots");
 			context.clickScreenButton("gui.done");
 			context.waitForScreen(null);
+
+			// How long the mod's code took each tick, for the CI log. A tick is 50,000 microseconds.
+			String cost = context.computeOnClient(client -> TickTimings.summary());
+			System.out.println(cost);
+			double average = context.computeOnClient(client -> TickTimings.averageMicros());
+			if (average > 1000) {
+				throw new AssertionError("the mod took " + average + " microseconds per tick on average");
+			}
 		}
 	}
 
@@ -167,6 +196,7 @@ public final class FishingFriendClientGameTest implements FabricClientGameTest {
 
 	private void castAndWaitForBite(ClientGameTestContext context) {
 		playedSounds.clear();
+		messages.clear();
 		useRod(context);
 		context.waitFor(client -> playedSounds.contains(BITE_SOUND), BITE_TIMEOUT_TICKS);
 	}
@@ -175,6 +205,29 @@ public final class FishingFriendClientGameTest implements FabricClientGameTest {
 	private static void useRod(ClientGameTestContext context) {
 		context.getInput().pressKey(options -> options.keyUse);
 		context.waitTicks(2);
+	}
+
+	private boolean anyMessage(String text) {
+		return messages.stream().anyMatch(message -> message.contains(text));
+	}
+
+	private void assertShown(String text, String when) {
+		if (!anyMessage(text)) {
+			throw new AssertionError("expected \"" + text + "\" " + when + "; messages: " + messages);
+		}
+	}
+
+	private void assertNoMessage(String text, String what) {
+		if (anyMessage(text)) {
+			throw new AssertionError("expected no message " + what + "; messages: " + messages);
+		}
+	}
+
+	/** Allows the empty message the mod uses to clear the action bar. */
+	private void assertNoMessages(String when) {
+		if (messages.stream().anyMatch(message -> !message.isEmpty())) {
+			throw new AssertionError("expected no messages " + when + "; messages: " + messages);
+		}
 	}
 
 	private void assertNotPlayed(String sound, String when) {

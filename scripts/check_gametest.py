@@ -13,10 +13,9 @@ import sys
 from pathlib import Path
 
 EXPECTED_SCREENSHOTS = [
-    "fishingfriend-reminder-aiming-at-spot",
-    "fishingfriend-reminder-far-enough",
-    "fishingfriend-reminder-back-in-spot",
-    "fishingfriend-server-running-low",
+    "fishingfriend-distance-aiming-at-spot",
+    "fishingfriend-distance-far-enough",
+    "fishingfriend-distance-back-in-spot",
     "fishingfriend-stats",
     "fishingfriend-config-sounds",
     "fishingfriend-config-spots",
@@ -39,6 +38,10 @@ def main():
     for name in EXPECTED_SCREENSHOTS:
         if name not in taken:
             problems.append(f"missing screenshot {name}")
+
+    for line in text.splitlines():
+        if "FISHING_FRIEND_TICK_COST" in line:
+            print("tick cost: " + line[line.index("FISHING_FRIEND_TICK_COST") + len("FISHING_FRIEND_TICK_COST "):].strip())
 
     stats_file = run_dir / "config" / "fishingfriend-stats.json"
     if stats_file.exists():
